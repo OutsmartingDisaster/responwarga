@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@/../lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { toast } from 'react-hot-toast';
+import { Response } from '@/types/responses';
 
 // --- Define Types (Reuse/Import later) ---
 type DisasterResponse = {

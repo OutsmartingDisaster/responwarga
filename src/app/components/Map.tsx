@@ -12,6 +12,7 @@ interface MapProps {
   filterType?: FilterType;
   emergencyType?: EmergencyType;
   contributionType?: ContributionType;
+  emergencyReportsData?: any[] | null;
 }
 
 // Dynamically import Leaflet components with no SSR to avoid hydration issues
@@ -22,7 +23,13 @@ const MapWithNoSSR = dynamic(() => import('./MapLeaflet'), {
   </div>
 });
 
-export default function MapComponent({ center, filterType, emergencyType, contributionType }: MapProps) {
+export default function MapComponent({ 
+  center, 
+  filterType, 
+  emergencyType, 
+  contributionType, 
+  emergencyReportsData
+}: MapProps) {
   return (
     <div className="w-full h-screen">
       <MapWithNoSSR 
@@ -30,6 +37,7 @@ export default function MapComponent({ center, filterType, emergencyType, contri
         filterType={filterType}
         emergencyType={emergencyType}
         contributionType={contributionType}
+        emergencyReportsData={emergencyReportsData}
       />
     </div>
   );

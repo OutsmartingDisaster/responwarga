@@ -1,3 +1,5 @@
 "use client";
-import DailyLog from "../../../dashboard/DailyLog";
+
+import React from 'react';
+import DailyLog from '../../dashboard/DailyLog';
 export default DailyLog;

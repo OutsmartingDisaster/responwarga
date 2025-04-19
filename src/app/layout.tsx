@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
+import { SupabaseClientProvider } from "../contexts/SupabaseClientProvider";
+import { Toaster } from 'react-hot-toast';
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Respon Warga",
-  description: "Platform untuk melaporkan kejadian darurat dan menawarkan bantuan di Indonesia",
-  manifest: "/manifest.json",
+  title: "Respon Warga App",
+  description: "Aplikasi pelaporan dan respon warga",
 };
 
 export default function RootLayout({
@@ -13,9 +17,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="id">
-      <body className="antialiased bg-zinc-900 text-zinc-100">
-        {children}
+    <html lang="en">
+      <body className={inter.className}>
+        <SupabaseClientProvider>
+          {children}
+          <Toaster position="bottom-right" />
+        </SupabaseClientProvider>
       </body>
     </html>
   );

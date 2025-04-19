@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { createClient } from '@/../lib/supabase/client';
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import { toast } from 'react-hot-toast';
 
 interface Contribution {
   id: number;
@@ -19,7 +19,7 @@ interface Contribution {
   latitude: number;
   longitude: number;
   photo_url: string | null;
-  status: 'active' | 'inactive' | 'verified' | 'assigned';
+  status: 'menunggu' | 'disetujui' | 'dikirim' | 'dibatalkan' | 'assigned' | 'verified';
   assigned_to?: string;
   responder_status?: 'diterima' | 'sedang_berjalan' | 'selesai' | 'batal' | null;
   shelter?: string;
@@ -85,7 +85,7 @@ export default function ContributionsTable({ responderView = false }: { responde
     }
   };
 
-  const updateStatus = async (id: number, status: 'active' | 'inactive') => {
+  const updateStatus = async (id: number, status: 'menunggu' | 'disetujui' | 'dikirim' | 'dibatalkan' | 'assigned' | 'verified') => {
     try {
       const { error } = await supabase
         .from('contributions')
@@ -193,8 +193,12 @@ export default function ContributionsTable({ responderView = false }: { responde
                       onChange={(e) => updateStatus(contribution.id, e.target.value as any)}
                       className="bg-zinc-700 border border-zinc-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
                     >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
+                      <option value="menunggu">Menunggu</option>
+                      <option value="disetujui">Disetujui</option>
+                      <option value="dikirim">Dikirim</option>
+                      <option value="assigned">Assigned</option>
+                      <option value="verified">Verified</option>
+                      <option value="dibatalkan">Dibatalkan</option>
                     </select>
                   </td>
                   <td className="px-4 py-3">

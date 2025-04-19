@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { createClient } from "@/../lib/supabase/client";
+import { createClient } from '@/lib/supabase/client';
 import 'leaflet/dist/leaflet.css';
 import { toast } from 'react-hot-toast';
 import { useRouter, useParams } from 'next/navigation';
@@ -522,7 +522,7 @@ export default function DisasterResponseDashboard() {
 
   return (
     <div className="space-y-8">
-      <h2 className="text-2xl font-bold text-zinc-100">Manajemen Respon Bencana</h2>
+      <h2 className="text-2xl font-bold text-zinc-100">Manajemen Respon</h2>
 
       {/* Section 1: Create New Response Form */}
       <section className="bg-zinc-800 p-6 rounded-lg shadow">

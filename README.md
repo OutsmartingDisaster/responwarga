@@ -1,6 +1,10 @@
 # Respon Warga
 
+<img src="https://github.com/OutsmartingDisaster/responwarga/blob/main/img/ss.png">
+
 Respon Warga adalah aplikasi web yang dirancang untuk menyederhanakan koordinasi antara anggota masyarakat yang membutuhkan bantuan selama keadaan darurat dan organisasi responder yang menawarkan bantuan. Aplikasi ini menyediakan wadah berbasis data untuk mengelola respon bencana, melacak sumber daya, mencatat aktivitas, dan memvisualisasikan situasi pada peta interaktif.
+
+<img src="https://media.licdn.com/dms/image/v2/D4E10AQFKWZ6UGYJnGg/image-shrink_800/B4EZV_SY.lG0Ac-/0/1741597283815?e=2147483647&v=beta&t=ivJsiOcKQOBvhD9tZedwoQS3S12aGOLc7sfALTdSJDw" width=50% height=50%>
 
 ResponWarga dibuat dengan bantuan Cursor, Cline dan Roocode menggunakan GPT4.1 dan Gemini 2.5 Pro. Jadi sudah pasti kodenya berantakan!!
 Bantu kami untuk bisa membuat platform ini lebih baik!

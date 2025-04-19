@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+import Marquee from "react-fast-marquee";
 
 export default function MarqueeBanner() {
+  const supabase = createClient();
   const [banners, setBanners] = useState<any[]>([]);
   const [showBanner, setShowBanner] = useState(true);
 

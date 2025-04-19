@@ -1,13 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSupabase } from '@/contexts/SupabaseClientProvider';
 import { useRouter } from 'next/navigation';
-
-// Initialize Supabase client outside component to prevent recreation
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { toast } from 'react-hot-toast';
+import LocationPicker from './shared/LocationPicker';
+import PhotoUpload from './shared/PhotoUpload';
 
 // Initial form state - moved outside to prevent recreation
 const initialFormState = {
@@ -55,12 +53,14 @@ interface ContributionFormProps {
   onSuccess: (latitude: number, longitude: number) => void;
 }
 
-export default function ContributionForm({ onClose, onSuccess }: ContributionFormProps) {
+const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess }) => {
   const router = useRouter();
+  const supabase = useSupabase();
   const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState(initialFormState);
-  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [formData, setFormData] = useState<typeof initialFormState>(initialFormState);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [address, setAddress] = useState<string>('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -93,7 +93,7 @@ export default function ContributionForm({ onClose, onSuccess }: ContributionFor
   const handlePhotoChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setPhoto(file);
+      setPhotoFile(file);
       const url = URL.createObjectURL(file);
       setPhotoPreview(url);
       
@@ -112,8 +112,8 @@ export default function ContributionForm({ onClose, onSuccess }: ContributionFor
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const coords = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
         };
         setLocation(coords);
         setError(null);
@@ -123,7 +123,7 @@ export default function ContributionForm({ onClose, onSuccess }: ContributionFor
           const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
           const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}&addressdetails=1`,
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}&addressdetails=1`,
             { signal: controller.signal }
           );
           
@@ -142,10 +142,7 @@ export default function ContributionForm({ onClose, onSuccess }: ContributionFor
               data.address.state
             ].filter(Boolean);
             
-            setFormData(prev => ({
-              ...prev,
-              address: addressParts.join(', ')
-            }));
+            setAddress(addressParts.join(', '));
           }
         } catch (err) {
           console.error('Error getting address:', err);
@@ -177,70 +174,79 @@ export default function ContributionForm({ onClose, onSuccess }: ContributionFor
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!location) {
+      toast.error("Lokasi kontribusi wajib diisi.");
+      return;
+    }
+
     if (!validateForm()) return;
 
     setIsLoading(true);
     setError(null);
 
     try {
-      // Upload photo if exists
-      let photoUrl = null;
-      if (photo) {
-        const fileName = `contributions/${Date.now()}_${photo.name}`;
+      let photoPublicUrl: string | null = null;
+      if (photoFile) {
+        const fileName = `contributions/${Date.now()}_${photoFile.name}`;
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('contribution_photo')
-          .upload(fileName, photo);
+          .from('contribution-photos')
+          .upload(fileName, photoFile);
 
-        if (uploadError) throw new Error(`Error uploading photo: ${uploadError.message}`);
+        if (uploadError) throw uploadError;
 
-        if (supabaseUrl) {
-          photoUrl = new URL(`storage/v1/object/public/contribution_photo/${fileName}`, supabaseUrl).href;
-        }
+        const { data: urlData } = supabase.storage
+          .from('contribution-photos')
+          .getPublicUrl(fileName);
+        
+        photoPublicUrl = urlData?.publicUrl || null;
       }
 
-      // Prepare contribution data
       const contributionData = {
         full_name: formData.fullName,
         phone_number: formData.phoneNumber,
         email: formData.email,
-        address: formData.address,
+        address: address,
         description: formData.description,
         contribution_type: formData.contributionType,
         capacity: formData.contributionType === 'shelter' ? formData.capacity : null,
         facilities: formData.contributionType === 'shelter' ? formData.facilities : null,
         quantity: ['food_water', 'medical', 'clothing'].includes(formData.contributionType) ? formData.quantity : null,
         unit: ['food_water', 'medical', 'clothing'].includes(formData.contributionType) ? formData.unit : null,
-        latitude: location.latitude,
-        longitude: location.longitude,
-        photo_url: photoUrl,
-        status: formData.showContactOnMap ? 'active' : 'Akan di koordinasikan oleh relawan',
+        latitude: location.lat,
+        longitude: location.lng,
+        photo_url: photoPublicUrl,
+        status: 'pending_review',
         show_contact_info: formData.showContactOnMap,
+        consent_statement: formData.agreeToTerms,
       };
 
-      const { error: insertError } = await supabase
+      const { data, error } = await supabase
         .from('contributions')
         .insert([contributionData])
         .select();
 
-      if (insertError) throw new Error(`Error saving contribution: ${insertError.message}`);
+      if (error) throw error;
 
-      setSuccess(true);
-      onSuccess(location.latitude, location.longitude);
+      toast.success('Kontribusi berhasil dikirim!');
+      onSuccess(location.lat, location.lng);
       
       // Reset form after delay
       const timeoutId = setTimeout(() => {
         setFormData(initialFormState);
-        setPhoto(null);
+        setPhotoFile(null);
         if (photoPreview) URL.revokeObjectURL(photoPreview);
         setPhotoPreview(null);
         setSuccess(false);
         onClose();
       }, 3000);
 
+      setSuccess(true);
+
       return () => clearTimeout(timeoutId);
 
     } catch (err: any) {
-      setError(err.message);
+      console.error('Error submitting contribution:', err);
+      toast.error(`Gagal mengirim kontribusi: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -400,7 +406,7 @@ export default function ContributionForm({ onClose, onSuccess }: ContributionFor
                     id="address"
                     name="address"
                     required
-                    value={formData.address}
+                    value={address}
                     onChange={handleChange}
                     className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                   />
@@ -418,7 +424,7 @@ export default function ContributionForm({ onClose, onSuccess }: ContributionFor
                 <p className="mt-1 text-sm text-zinc-400">Lengkapi detail alamat secara manual dengan informasi seperti nomor rumah, gang, atau patokan terdekat agar tim respon dapat dengan mudah menemukan lokasi.</p>
                 {location && (
                   <p className="mt-1 text-xs text-green-500">
-                    Lokasi ditemukan: {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
+                    Lokasi ditemukan: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
                   </p>
                 )}
               </div>
@@ -605,4 +611,6 @@ export default function ContributionForm({ onClose, onSuccess }: ContributionFor
       <div className="fixed inset-0 -z-10" onClick={onClose} />
     </div>
   );
-}
+};
+
+export default ContributionForm;

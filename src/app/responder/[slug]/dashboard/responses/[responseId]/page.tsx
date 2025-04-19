@@ -1,22 +1,21 @@
 "use client";
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@/../lib/supabase/client'; // Adjust path as needed
+import { useSupabase } from "@/contexts/SupabaseClientProvider";
 import Link from 'next/link';
 import 'leaflet/dist/leaflet.css';
 import dynamic from 'next/dynamic'; // Import dynamic
 import { toast } from 'react-hot-toast'; // Import toast
+import { EmergencyReportStatus } from "@/app/mohonijin/dashboard/components/EmergencyReportsTable"; // Import status type
 
-// --- Leaflet Icon Fix --- (Moved to useEffect)
-// import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
-// ... (other icon imports)
-// delete (L.Icon.Default.prototype as any)._getIconUrl;
-// L.Icon.Default.mergeOptions({ ... });
+// Dynamically import MapLeaflet
+const MapLeaflet = dynamic(() => import('@/app/components/MapLeaflet'), { 
+    ssr: false, 
+    loading: () => <div className="h-64 w-full flex items-center justify-center bg-zinc-700 text-zinc-400">Memuat peta...</div> 
+});
 
-// --- Dynamically import Leaflet components ---
-const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false, loading: () => <div className="h-64 w-full flex items-center justify-center bg-zinc-700 text-zinc-400">Memuat peta...</div> });
-const TileLayer = dynamic(() => import('react-leaflet').then(mod => mod.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { ssr: false });
+// Define Geofence Radius Globally (or pass as prop if needed)
+const GEOFENCE_RADIUS_METERS = 15000;
 
 // Types (should ideally be shared in src/types/index.ts later)
 type ParsedAddress = {
@@ -38,7 +37,7 @@ type AssignedMember = {
   role: string; // Fetched from profiles
 };
 
-// --- Log Types (Define based on your actual table columns) ---
+// --- Log Types --- 
 type ActivityLog = {
     id: string;
     what: string | null;
@@ -46,8 +45,13 @@ type ActivityLog = {
     where_location: string | null;
     why: string | null;
     how: string | null;
-    notes: string | null;
-    created_at: string | null;
+    notes: string | null; 
+    created_at: string | null; 
+    // Added fields based on usage in handleAssignMemberSubmit & display logic
+    user_id?: string | null; // UUID of user who performed action
+    type?: string | null; // e.g., 'assignment', 'manual_log'
+    description?: string | null; // Alternative description field
+    details?: Record<string, unknown> | null; // For structured details (JSONB)
     // responder_id: number | null; // If you need to show who logged it
 };
 
@@ -83,8 +87,7 @@ type ResponderLog = {
 }
 // --- End Log Types ---
 
-// Add EmergencyReport type (ensure it matches your table)
-// Should probably be moved to a shared types file
+// Update EmergencyReport type to use shared status
 interface EmergencyReport {
   id: number;
   full_name: string;
@@ -96,17 +99,72 @@ interface EmergencyReport {
   latitude: number | null;
   longitude: number | null;
   photo_url: string | null;
-  status: 'menunggu' | 'diproses' | 'selesai' | 'dibatalkan';
-  assigned_to?: string | null; // user_id of assigned responder
+  status: EmergencyReportStatus; // <-- Use shared type
+  assigned_to?: string | null; // user_id of assigned responder - consider replacing with responder_id
   created_at: string;
   disaster_response_id?: string | null;
-  // Add other fields if displayed
+  // Add fields needed for assignment display if fetched
+  org_responder_id?: string; 
+  responder_id?: string; 
+  org_responder_name?: string; // Keep one instance
+  responder_name?: string; 
 }
+
+// --- ADD Assignment Modal Definition --- 
+interface AssignmentModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (responderId: string) => void;
+  responders: { id: string; name: string }[];
+  selectedResponder: string;
+  setSelectedResponder: (id: string) => void;
+  isLoading?: boolean; // Add loading prop
+}
+
+const AssignmentModal: React.FC<AssignmentModalProps> = ({ 
+  isOpen, onClose, onSubmit, responders, selectedResponder, setSelectedResponder, isLoading = false
+}) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50">
+      <div className="bg-zinc-800 p-6 rounded-lg shadow-xl w-full max-w-md">
+        <h2 className="text-xl font-semibold mb-4 text-white">Assign Responder</h2>
+        {responders.length === 0 ? (
+          <p className="text-zinc-400">No available responders found for your organization.</p>
+        ) : (
+          <select 
+            value={selectedResponder}
+            onChange={(e) => setSelectedResponder(e.target.value)}
+            className="w-full p-2 rounded bg-zinc-700 border border-zinc-600 text-white mb-4"
+            disabled={isLoading}
+          >
+            <option value="">Select Responder</option>
+            {responders.map(r => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+        )}
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded bg-zinc-600 hover:bg-zinc-500 text-white" disabled={isLoading}>Cancel</button>
+          <button 
+            onClick={() => onSubmit(selectedResponder)}
+            disabled={!selectedResponder || responders.length === 0 || isLoading}
+            className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 flex items-center"
+          >
+            {isLoading && <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>}
+            {isLoading ? 'Assigning...' : 'Assign'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+// --- END Assignment Modal Definition --- 
 
 export default function ResponseDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const supabase = createClient();
+  const supabase = useSupabase();
 
   const slug = params.slug as string;
   const responseId = params.responseId as string;
@@ -124,7 +182,7 @@ export default function ResponseDetailPage() {
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
   const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLog[]>([]);
 
-  // --- NEW: State for active log tab ---
+  // Update activeLogTab state type
   const [activeLogTab, setActiveLogTab] = useState<'reports' | 'activity' | 'inventory' | 'delivery'>('reports');
 
   const [loading, setLoading] = useState(true);
@@ -136,6 +194,22 @@ export default function ResponseDetailPage() {
   const [deliveryForm, setDeliveryForm] = useState({ item_name: '', quantity: '', destination: '', notes: '' });
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [assignmentLoading, setAssignmentLoading] = useState<{[key: number]: boolean}>({});
+  // --- NEW: State for Invite Form ---
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteLoading, setInviteLoading] = useState(false);
+  // --- NEW: State for Assignment Form ---
+  const [selectedMemberToAssign, setSelectedMemberToAssign] = useState(''); // Store user_id
+  const [assignmentSubmitLoading, setAssignmentSubmitLoading] = useState(false);
+
+  // --- NEW: State for Assignment Modal ---
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [reportToAssign, setReportToAssign] = useState<EmergencyReport | null>(null);
+  const [selectedResponderId, setSelectedResponderId] = useState('');
+
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // --- Client-side effect for Leaflet Icon Fix ---
   useEffect(() => {
@@ -154,32 +228,58 @@ export default function ResponseDetailPage() {
   }, []);
 
   const fetchResponseDetails = useCallback(async () => {
-    if (!responseId || !slug) return;
+    console.log('>>> [Response Detail] fetchResponseDetails defined');
+    console.log('>>> [Response Detail] Using responseId:', responseId, 'and slug:', slug);
+
+    // Ensure supabase client is available
+    if (!supabase) {
+      console.log(">>> [Response Detail] Supabase client not ready, skipping fetch.");
+      setError('Supabase client not available'); // Set error if client isn't ready
+      setLoading(false);
+      return;
+    }
+    
+    if (!responseId || !slug) {
+        console.error('>>> [Response Detail] Missing responseId or slug');
+        setError('Parameter respon atau organisasi tidak ditemukan.');
+        setLoading(false);
+        return;
+    }
     setLoading(true);
     setError(null);
+    // Reset states
     setActivityLogs([]); setInventoryLogs([]); setDeliveryLogs([]); setEmergencyReports([]);
     setAssignedMembers([]); setOrganizationMembers([]);
+    setUserRole(null); // Reset user role state at start
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-          setUserId(user.id);
-          // Fetch user role
-          const { data: profileData, error: profileError } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('user_id', user.id)
-            .single();
-          if (profileError) {
-              console.error("Error fetching user role:", profileError.message);
-              // Handle error appropriately, maybe prevent status change
-          } else {
-              setUserRole(profileData?.role || null);
-          }
+      console.log('>>> [Response Detail] TRY BLOCK START');
+      // Use supabase instance from context
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('>>> [Response Detail] Got User:', { email: user?.email, id: user?.id, error: userError?.message });
+
+      if (userError) throw new Error(`User fetch error: ${userError.message}`);
+      if (!user) throw new Error('User not authenticated.');
+
+      setUserId(user.id);
+      // Fetch user role
+      const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
+      console.log('>>> Got Profile:', { role: profileData?.role, error: profileError?.message });
+
+      if (profileError) {
+          console.error(">>> Profile fetch error:", profileError.message);
+          // Don't set role, let it remain null
       } else {
-           console.warn("User not authenticated");
+          setUserRole(profileData?.role || null);
+          console.log('>>> SET User Role State:', profileData?.role || null);
       }
 
+      console.log('>>> [Response Detail] Proceeding after user/role check...');
+      
       // 1. Get Org ID & Name
       const { data: orgData, error: orgError } = await supabase
           .from('organizations')
@@ -202,6 +302,11 @@ export default function ResponseDetailPage() {
       if (!responseData) throw new Error('Respon tidak ditemukan.');
       if (responseData.organization_id !== currentOrgId) throw new Error('Akses ditolak...');
       setResponse(responseData);
+
+      // --- Get Response Location for Geofencing ---
+      const centerLat = responseData.latitude;
+      const centerLon = responseData.longitude;
+      // --- End Response Location ---
 
       // 3. Fetch Members assigned to *this specific disaster response*
       const { data: assignmentsData, error: assignmentsError } = await supabase
@@ -241,38 +346,69 @@ export default function ResponseDetailPage() {
          );
       }
 
-      // --- 5. Fetch Related Logs & Emergency Reports --- 
+      // --- 5. Fetch Related Logs & Geofenced Emergency Reports --- 
       const dataPromises = [
         supabase.from('activity_logs').select('*').eq('disaster_response_id', responseId).order('when_time', { ascending: false }),
         supabase.from('inventory_logs').select('*').eq('disaster_response_id', responseId),
         supabase.from('delivery_logs').select('*').eq('disaster_response_id', responseId),
-        supabase.from('emergency_reports').select('*').eq('disaster_response_id', responseId).order('created_at', { ascending: false })
+        // Replace direct fetch with RPC call if location exists
+        centerLat != null && centerLon != null
+          ? supabase.rpc('get_reports_within_radius', { center_lat: centerLat, center_lon: centerLon, radius_meters: GEOFENCE_RADIUS_METERS })
+          : Promise.resolve({ data: [], error: null }) // Resolve with empty if no location
+        // supabase.from('emergency_reports').select('*').eq('disaster_response_id', responseId).order('created_at', { ascending: false })
       ];
+
       const [activityResult, inventoryResult, deliveryResult, reportsResult] = await Promise.all(dataPromises);
 
-      // Handle results (log errors but don't block page load)
+      // Handle results and set state
       if (activityResult.error) console.error("Error fetching activity logs:", activityResult.error.message);
       else setActivityLogs(activityResult.data || []);
+
       if (inventoryResult.error) console.error("Error fetching inventory logs:", inventoryResult.error.message);
       else setInventoryLogs(inventoryResult.data || []);
+
       if (deliveryResult.error) console.error("Error fetching delivery logs:", deliveryResult.error.message);
       else setDeliveryLogs(deliveryResult.data || []);
-      if (reportsResult.error) console.error("Error fetching emergency reports:", reportsResult.error.message);
+
+      if (reportsResult.error) console.error("Error fetching geofenced emergency reports:", reportsResult.error.message);
       else setEmergencyReports(reportsResult.data || []);
 
+      // --- Fetch Organization Members (Potential Responders) ---
+      const { data: membersData, error: membersError } = await supabase
+        .from('profiles')
+        .select('user_id, name:full_name, role') // Select user_id and name, role
+        .eq('organization_id', currentOrgId)
+        .eq('role', 'org_responder'); // Filter for responders only
+
+      if (membersError) {
+        console.error("Error fetching organization members:", membersError);
+        // Handle error appropriately, maybe set an error state
+      } else {
+        // Map to the structure needed for the Assignment Modal ({ id: string, name: string })
+        setOrganizationMembers(membersData?.map(m => ({ id: m.user_id, name: m.name || 'Unnamed Responder', role: m.role })) || []);
+      }
+      // --- End Fetch Organization Members ---
+
     } catch (err: any) {
-      console.error('Error fetching response details:', err);
-      setError(err.message);
+      console.error('>>> [Response Detail] CATCH BLOCK Error:', err);
+      setError(err.message || 'An unknown error occurred');
+      // Reset other states on error if needed
       setResponse(null); setAssignedMembers([]); setOrganizationMembers([]);
-      setActivityLogs([]); setInventoryLogs([]); setDeliveryLogs([]); setEmergencyReports([]);
     } finally {
+      console.log('>>> [Response Detail] FINALLY BLOCK');
       setLoading(false);
     }
   }, [responseId, slug, supabase]);
 
   useEffect(() => {
-    fetchResponseDetails();
-  }, [fetchResponseDetails]);
+    console.log('>>> [Response Detail] useEffect triggered. supabase available:', !!supabase);
+    if (supabase && responseId && slug) { // Check supabase exists before fetching
+      fetchResponseDetails();
+    }
+    // Add a cleanup function if necessary, e.g., for subscriptions
+    // return () => { /* cleanup logic */ };
+    // Temporarily remove fetchResponseDetails for diagnostics
+  }, [responseId, slug, supabase]); // <--- REMOVED fetchResponseDetails
 
   // Helper to format address
   const formatAddress = (addr: ParsedAddress | null | undefined): string => {
@@ -297,6 +433,7 @@ export default function ResponseDetailPage() {
 
   // --- NEW: Form Submission Handlers ---
   const handleActivitySubmit = async (e: React.FormEvent) => {
+    if (!supabase) { toast.error("Client error"); return; }
     e.preventDefault();
     if (!activityForm.what || !activityForm.when_time) {
         toast.error("Field 'Apa' dan 'Kapan' wajib diisi untuk Log Aktivitas.");
@@ -325,6 +462,7 @@ export default function ResponseDetailPage() {
   };
 
   const handleInventorySubmit = async (e: React.FormEvent) => {
+    if (!supabase) { toast.error("Client error"); return; }
     e.preventDefault();
      if (!inventoryForm.item_name) {
         toast.error("Nama Item wajib diisi untuk Log Inventaris.");
@@ -353,6 +491,7 @@ export default function ResponseDetailPage() {
   };
 
   const handleDeliverySubmit = async (e: React.FormEvent) => {
+    if (!supabase) { toast.error("Client error"); return; }
     e.preventDefault();
      if (!deliveryForm.item_name || !deliveryForm.quantity) {
         toast.error("Nama Item dan Jumlah wajib diisi untuk Log Pengiriman.");
@@ -387,6 +526,7 @@ export default function ResponseDetailPage() {
 
   // --- NEW: Assignment Handler ---
   const handleAssignEmergencyResponder = async (reportId: number, memberUserId: string) => {
+    if (!supabase) { toast.error("Client error"); return; }
     if (!memberUserId) {
         toast.error("Pilih relawan yang akan ditugaskan.");
         return;
@@ -397,7 +537,7 @@ export default function ResponseDetailPage() {
             .from('emergency_reports')
             .update({ 
                 assigned_to: memberUserId, // Store the user_id of the responder
-                status: 'diproses' // Update status upon assignment
+                status: 'Ditugaskan' // Update status upon assignment to Ditugaskan
              })
             .eq('id', reportId)
             .eq('disaster_response_id', responseId); // Ensure we only update report linked to this response
@@ -425,6 +565,7 @@ export default function ResponseDetailPage() {
 
   // --- NEW: Status Update Handler ---
   const handleUpdateStatus = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (!supabase) { toast.error("Client error"); return; }
       const newStatus = e.target.value;
       if (!response || newStatus === response.status) {
           return; // No change or response not loaded
@@ -461,12 +602,207 @@ export default function ResponseDetailPage() {
       // setLoading(false) // Loading will stop on navigation or error
   };
 
-  if (loading) return <div className="p-6 text-zinc-400">Memuat detail respon...</div>;
-  if (error) return <div className="p-6 text-red-500 bg-red-900/30 rounded">Error: {error}</div>;
-  if (!response) return <div className="p-6 text-zinc-400">Detail respon tidak ditemukan.</div>;
+  // --- NEW: Invite Member Form Submission Handler ---
+  const handleInviteSubmit = async (e: React.FormEvent) => {
+    if (!supabase) { toast.error("Client error"); return; }
+    e.preventDefault();
+    if (!inviteEmail || !response?.organization_id) {
+        toast.error("Email anggota dan ID Organisasi diperlukan.");
+        return;
+    }
+    setInviteLoading(true);
+    try {
+      // Get the current session for the Authorization header
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const responseApi = await fetch('/api/invite-member', {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+              invitee_email: inviteEmail,
+              organization_id: response.organization_id
+          }),
+      });
+
+      const result = await responseApi.json();
+
+      if (!responseApi.ok) {
+        throw new Error(result.error || 'Gagal mengirim undangan.');
+      }
+
+      toast.success(result.message || "Undangan berhasil dikirim!");
+      setInviteEmail(''); // Reset form
+      // Optionally refetch members or wait for user to refresh/navigate
+      // fetchResponseDetails(); // Can cause flicker, might be better to just show success
+
+    } catch (error: any) {
+      console.error("Error inviting member:", error);
+      toast.error(`Gagal mengundang anggota: ${error.message}`);
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  // --- Compute list of assignable members ---
+  const assignableMembers = organizationMembers.filter(orgMember => 
+    orgMember.role === 'org_responder' && 
+    !assignedMembers.some(assigned => assigned.id === orgMember.id)
+  );
+
+  // --- NEW: Assign Existing Member Form Submission Handler ---
+  const handleAssignMemberSubmit = async (e: React.FormEvent) => {
+    if (!supabase || !userId) { toast.error("Client error or user not identified"); return; } // Added userId check
+    e.preventDefault();
+    const assignedMemberId = selectedMemberToAssign;
+    if (!assignedMemberId || !responseId) {
+        toast.error("Pilih anggota yang akan ditugaskan.");
+        return;
+    }
+
+    // Find member details for logging
+    const memberDetails = organizationMembers.find(m => m.id === assignedMemberId);
+    const assignedMemberName = memberDetails?.name || assignedMemberId;
+
+    setAssignmentSubmitLoading(true);
+    try {
+        // 1. Insert into team_assignments (keep existing logic)
+        const { error: assignmentError } = await supabase
+            .from('team_assignments')
+            .insert({
+                disaster_response_id: responseId,
+                member_id: assignedMemberId
+            });
+        
+        if (assignmentError) {
+            if (assignmentError.code === '23505') { // Unique violation
+                 toast.error("Anggota ini sudah ditugaskan untuk respon ini.");
+                 setAssignmentSubmitLoading(false); // Stop loading if already assigned
+                 return; // Exit early
+            } else {
+                 throw new Error(`Gagal menambahkan ke team_assignments: ${assignmentError.message}`);
+            }
+        } 
+
+        // 2. Update Disaster Response status
+        const { error: responseUpdateError } = await supabase
+            .from('disaster_responses')
+            .update({ 
+                status: 'assigned', // Set new status
+                // Optionally update an array of assigned IDs if schema supports it
+                // assigned_responder_ids: supabase.rpc('array_append', { field: 'assigned_responder_ids', value: assignedMemberId })
+             })
+            .eq('id', responseId);
+
+        if (responseUpdateError) {
+            throw new Error(`Gagal update status respon: ${responseUpdateError.message}`);
+        }
+
+        // 3. Update linked Emergency Reports status
+        const { error: reportsUpdateError } = await supabase
+            .from('emergency_reports')
+            .update({ status: 'Ditugaskan' }) // Set new status
+            .eq('disaster_response_id', responseId)
+            .in('status', ['menunggu']); // Only update reports that are waiting
+
+        if (reportsUpdateError) {
+            console.warn("Assignment successful, but failed to update some emergency report statuses:", reportsUpdateError.message);
+            // Decide if this is critical enough to rollback or just warn
+            toast("Warning: Anggota ditugaskan, tapi gagal update status laporan darurat terkait.");
+        }
+
+        // 4. Add to Activity Log
+        const activityDescription = `Menugaskan ${assignedMemberName} ke respon ini.`;
+        const { error: logError } = await supabase
+          .from('activity_logs') // Assuming 'activity_logs' table
+          .insert({
+            disaster_response_id: responseId,
+            user_id: userId, // The org_admin performing the action
+            type: 'assignment', // Log type
+            description: activityDescription,
+            details: { assigned_user_id: assignedMemberId, assigned_user_name: assignedMemberName }, // Store extra info
+            when_time: new Date().toISOString() // Use current time for assignment log
+          });
+
+        if (logError) {
+          console.warn("Assignment successful, but failed to add activity log:", logError.message);
+          // Non-critical? Proceed but maybe log it centrally.
+          toast("Warning: Anggota ditugaskan, tapi gagal mencatat aktivitas.");
+        }
+
+        // --- Success --- 
+        toast.success(`Anggota ${assignedMemberName} berhasil ditugaskan!`);
+        setSelectedMemberToAssign(''); // Reset dropdown
+        fetchResponseDetails(); // Refetch details to update UI
+
+    } catch (error: any) {
+        console.error("Error assigning member:", error);
+        toast.error(`Gagal menugaskan anggota: ${error.message}`);
+        // Consider rolling back assignment if critical steps failed?
+    } finally {
+        setAssignmentSubmitLoading(false);
+    }
+  };
+
+  // --- NEW: Assignment Modal Handlers ---
+  const openAssignModal = (report: EmergencyReport) => {
+    setReportToAssign(report);
+    setSelectedResponderId(''); // Reset selection
+    setIsAssignModalOpen(true);
+  };
+
+  const closeAssignModal = () => {
+    setIsAssignModalOpen(false);
+    setReportToAssign(null);
+  };
+
+  const handleAssignSubmit = async (responderId: string) => {
+    if (!reportToAssign || !responderId || !response?.organization_id) {
+      toast.error("Missing report, responder, or organization information.");
+      return;
+    }
+
+    const reportId = reportToAssign.id;
+    const orgId = response.organization_id; // Use orgId from the fetched response
+    
+    setAssignmentSubmitLoading(true); // Use specific loading state
+    console.log(`Assigning report ${reportId} to responder ${responderId} in org ${orgId}`);
+
+    try {
+      const { error: rpcError } = await supabase.rpc('assign_emergency_report', {
+        report_id: reportId,
+        p_org_responder_id: orgId, 
+        p_responder_id: responderId 
+      });
+      if (rpcError) throw rpcError;
+
+      // Re-fetch details to get updated report status and names
+      await fetchResponseDetails(); 
+      
+      closeAssignModal();
+      toast.success('Report assigned successfully!');
+
+    } catch (err: any) {
+      console.error("Error assigning report:", err);
+      toast.error(`Failed to assign report: ${err.message}`);
+    } finally {
+      setAssignmentSubmitLoading(false);
+    }
+  };
+
+  if (loading) return <div className="p-6 text-center text-zinc-400">Memuat detail respon...</div>;
+  if (error) return <div className="p-6 text-center text-red-400">Error: {error}</div>;
+  if (!response) return <div className="p-6 text-center text-zinc-400">Respon tidak ditemukan.</div>;
+
+  // --- Debug Log (keep this one too) --- 
+  console.log('>>> [Response Detail] RENDER CHECK userRole:', userRole, 'Is Org Admin:', userRole === 'org_admin');
+  // --- End Debug Log ---
 
   return (
-    <div className="p-6 bg-zinc-900 text-zinc-100 min-h-screen">
+    <div className="p-4 md:p-6 space-y-6 bg-zinc-900 min-h-screen text-zinc-100">
       <div className="max-w-4xl mx-auto">
         <Link href={`/responder/${slug}/dashboard`} className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 mb-4">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -477,11 +813,12 @@ export default function ResponseDetailPage() {
 
         <h1 className="text-3xl font-bold mb-4 text-zinc-100">{response.name}</h1>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Column 1: Details */}
-          <div className="md:col-span-2 space-y-4 bg-zinc-800 p-6 rounded-lg shadow">
-            <div>
-              <h2 className="text-xl font-semibold mb-2 text-zinc-200">Informasi Umum</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: Response Details & Map */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* General Info Card */}
+            <div className="bg-zinc-800 p-4 rounded-lg shadow">
+              <h2 className="text-lg font-semibold text-zinc-200 mb-3">Informasi Umum</h2>
               {/* Status Display and Dropdown */}
               <div className="flex items-center gap-3 mb-2">
                   <p className="text-sm"><strong className="text-zinc-400">Status:</strong></p>
@@ -498,7 +835,14 @@ export default function ResponseDetailPage() {
                           {/* Add other statuses here if needed in the future */}
                       </select>
                   ) : (
-                     <span className={`capitalize px-2 py-0.5 rounded text-xs font-medium ${response.status === 'active' ? 'bg-green-700 text-green-100' : 'bg-zinc-600 text-zinc-200'}`}>
+                     <span className={`capitalize px-2 py-0.5 rounded text-xs font-medium 
+                        ${response.status === 'active' 
+                          ? 'bg-green-700 text-green-100' 
+                          : response.status === 'assigned' 
+                          ? 'bg-blue-700 text-blue-100' 
+                          : 'bg-zinc-600 text-zinc-200' // Default/finished
+                        }`
+                    }>
                           {response.status}
                       </span>
                   )}
@@ -508,8 +852,9 @@ export default function ResponseDetailPage() {
               <p className="text-sm"><strong className="text-zinc-400">Dibuat Tanggal:</strong> {new Date(response.created_at).toLocaleString('id-ID')}</p>
             </div>
 
-            <div>
-              <h2 className="text-xl font-semibold mb-2 text-zinc-200">Lokasi</h2>
+            {/* Location Card */}
+            <div className="bg-zinc-800 p-4 rounded-lg shadow">
+              <h2 className="text-lg font-semibold text-zinc-200 mb-3">Lokasi</h2>
               <p className="text-sm"><strong className="text-zinc-400">Deskripsi:</strong> {response.location || '(Tidak ada deskripsi tambahan)'}</p>
               {response.parsed_address ? (
                  <p className="text-sm"><strong className="text-zinc-400">Alamat Parsed:</strong> {formatAddress(response.parsed_address)}</p>
@@ -519,27 +864,39 @@ export default function ResponseDetailPage() {
                {mapPosition && (
                  <p className="text-sm"><strong className="text-zinc-400">Koordinat:</strong> Lat: {response.latitude?.toFixed(6)}, Lng: {response.longitude?.toFixed(6)}</p>
                )}
-              {mapPosition && (
-                <div className="mt-3 h-64 w-full rounded border border-zinc-700 overflow-hidden">
-                   <MapContainer center={mapPosition} zoom={15} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    <Marker position={mapPosition}></Marker>
-                  </MapContainer>
-                </div>
-              )}
+              
+              {/* Map */}
+              <div className="mt-4 h-64 md:h-96 w-full relative z-0">
+                {isClient && response && response.latitude && response.longitude && (
+                  <MapLeaflet 
+                    key={`${response.latitude}-${response.longitude}`} // Force re-render if location changes
+                    center={[response.latitude, response.longitude]}
+                    zoom={15}
+                    className="h-full w-full rounded-lg"
+                    emergencyReportsData={emergencyReports} // Pass geofenced data
+                    // Pass contribution data if needed later
+                    // contributionReportsData={...}
+                    // Pass contributionType if needed for filtering inside ContributionMarkers
+                    // contributionType={...} 
+                    // Keep filterType='all' or adjust as needed for MapLeaflet internal logic
+                    filterType='all' 
+                  />
+                )}
+                {/* Display message if no coordinates */}
+                {(!response.latitude || !response.longitude) && (
+                  <div className="h-full w-full flex items-center justify-center bg-zinc-700 text-zinc-400 rounded-lg">
+                    Koordinat lokasi tidak tersedia.
+                  </div>
+                )}
+              </div>
             </div>
-             {/* TODO: Add sections for Logs, Inventory, etc. related to this response */}
-             {/* Need to add disaster_response_id FK to log tables */}
           </div>
 
-          {/* Column 2: Assigned Members */}
+          {/* Right Column: Assigned Members */}
           <div className="space-y-4 bg-zinc-800 p-6 rounded-lg shadow">
             <h2 className="text-xl font-semibold mb-2 text-zinc-200">Anggota Ditugaskan</h2>
             {assignedMembers.length > 0 ? (
-              <ul className="space-y-2">
+              <ul className="space-y-2 mb-4">
                 {assignedMembers.map(member => (
                   <li key={member.id} className="text-sm bg-zinc-700/60 p-2 rounded">
                     <strong className="text-zinc-200">{member.name}</strong>
@@ -548,201 +905,204 @@ export default function ResponseDetailPage() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-zinc-400 italic">Belum ada anggota yang ditugaskan.</p>
+              <p className="text-sm text-zinc-400 italic mb-4">Belum ada anggota yang ditugaskan.</p>
+            )}
+
+            {/* --- NEW: Invite Member Form (Visible to org_admin) --- */} 
+            {userRole === 'org_admin' && response && (
+                <form onSubmit={handleInviteSubmit} className="mt-4 pt-4 border-t border-zinc-700">
+                    <h3 className="text-md font-semibold text-zinc-300 mb-2">Undang Anggota Baru (Org. Responder)</h3>
+                    <div className="flex items-center gap-2">
+                        <input 
+                            type="email"
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                            placeholder="Email anggota baru..."
+                            required
+                            className="flex-grow text-sm bg-zinc-700 border border-zinc-600 rounded px-3 py-1.5 text-zinc-100 focus:ring-blue-500 focus:border-blue-500 placeholder-zinc-500"
+                        />
+                        <button 
+                            type="submit"
+                            disabled={inviteLoading}
+                            className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        >
+                            {inviteLoading ? 'Mengundang...' : 'Undang'}
+                        </button>
+                    </div>
+                </form>
             )}
              {/* TODO: Add button to manage assignments? */}
+             {/* --- NEW: Assign Existing Member Form (Visible to org_admin) --- */} 
+              {userRole === 'org_admin' && response && assignableMembers.length > 0 && (
+                <form onSubmit={handleAssignMemberSubmit} className="mt-4 pt-4 border-t border-zinc-700">
+                    <h3 className="text-md font-semibold text-zinc-300 mb-2">Tugaskan Anggota ke Respon Ini</h3>
+                    <div className="flex items-center gap-2">
+                         <select 
+                            value={selectedMemberToAssign}
+                            onChange={(e) => setSelectedMemberToAssign(e.target.value)}
+                            required
+                            className="flex-grow text-sm bg-zinc-700 border border-zinc-600 rounded px-3 py-1.5 text-zinc-100 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value="" disabled>Pilih anggota...</option>
+                            {assignableMembers.map(member => (
+                                <option key={member.id} value={member.id}>{member.name} ({member.role})</option>
+                            ))}
+                        </select>
+                        <button 
+                            type="submit"
+                            disabled={assignmentSubmitLoading || !selectedMemberToAssign}
+                            className="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 rounded disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                            aria-label="Tugaskan anggota yang dipilih"
+                        >
+                            {assignmentSubmitLoading ? 'Menugaskan...' : 'Tugaskan Anggota'}
+                        </button>
+                    </div>
+                </form>
+              )}
           </div>
         </div>
 
-        {/* --- Section for Logs & Reports --- */}
-        <div className="mt-8">
-           <h2 className="text-2xl font-semibold mb-4 text-zinc-100">Detail & Log Terkait Respon</h2>
-           
-           {/* Tab Bar (Added Reports, removed Responder) */}
-           <div className="mb-4 border-b border-zinc-700 flex space-x-1 flex-wrap">
-             <button onClick={() => setActiveLogTab('reports')} className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${activeLogTab === 'reports' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>Laporan Darurat ({emergencyReports.length})</button>
-             <button onClick={() => setActiveLogTab('activity')} className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${activeLogTab === 'activity' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>Aktivitas ({activityLogs.length})</button>
-             <button onClick={() => setActiveLogTab('inventory')} className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${activeLogTab === 'inventory' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>Inventaris ({inventoryLogs.length})</button>
-             <button onClick={() => setActiveLogTab('delivery')} className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${activeLogTab === 'delivery' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>Pengiriman ({deliveryLogs.length})</button>
-           </div>
+        {/* Detail & Log Tabs Section */}
+        <div className="bg-zinc-800 p-4 rounded-lg shadow">
+            <h2 className="text-lg font-semibold text-zinc-200 mb-4">Detail & Log Terkait Respon</h2>
+            {/* Tab Buttons */}
+            <div className="flex border-b border-zinc-700 mb-4">
+                {[
+                    { key: 'reports', label: `Laporan Darurat (${emergencyReports.length})` },
+                    { key: 'activity', label: `Aktivitas (${activityLogs.length})` },
+                    { key: 'inventory', label: `Inventaris (${inventoryLogs.length})` },
+                    { key: 'delivery', label: `Pengiriman (${deliveryLogs.length})` }
+                ].map(tab => (
+                    <button
+                        key={tab.key}
+                        onClick={() => setActiveLogTab(tab.key as any)}
+                        className={`px-4 py-2 -mb-px border-b-2 transition-colors duration-150 ease-in-out 
+                            ${activeLogTab === tab.key 
+                                ? 'border-blue-500 text-blue-400' 
+                                : 'border-transparent text-zinc-400 hover:text-zinc-200'}
+                        `}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
 
-           {/* Content Area */}
-           <div className="bg-zinc-800 p-4 md:p-6 rounded-b-lg rounded-r-lg shadow">
-             {/* --- NEW: Emergency Reports Tab Content --- */}
-             {activeLogTab === 'reports' && (
-                  emergencyReports.length > 0 ? (
-                      <ul className="space-y-4">
-                          {emergencyReports.map(report => {
-                              const assignedResponder = organizationMembers.find(m => m.id === report.assigned_to);
-                              return (
-                                  <li key={report.id} className="p-4 bg-zinc-700/50 rounded-md border border-zinc-700">
-                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                          {/* Col 1: Contact & Location */}
-                                          <div className="space-y-2 text-sm">
-                                              <h4 className="font-semibold text-base text-zinc-100 mb-1">Pelapor & Lokasi</h4>
-                                              <p><strong className="text-zinc-400">Nama:</strong> {report.full_name || '-'}</p>
-                                              <p><strong className="text-zinc-400">Telp:</strong> {report.phone_number || '-'}</p>
-                                              <p><strong className="text-zinc-400">Email:</strong> {report.email || '-'}</p>
-                                              <p><strong className="text-zinc-400">Alamat:</strong> {report.address || '-'}</p>
-                                              <p><strong className="text-zinc-400">Koordinat:</strong> {report.latitude?.toFixed(5)}, {report.longitude?.toFixed(5)}</p>
-                                          </div>
-                                          {/* Col 2: Details & Photo */}
-                                          <div className="space-y-2 text-sm">
-                                              <h4 className="font-semibold text-base text-zinc-100 mb-1">Detail Laporan</h4>
-                                              <p><strong className="text-zinc-400">Jenis Bantuan:</strong> {report.assistance_type || '-'}</p>
-                                              <p><strong className="text-zinc-400">Status Laporan:</strong> <span className="capitalize">{report.status}</span></p>
-                                              <p><strong className="text-zinc-400">Deskripsi:</strong></p>
-                                              <p className="whitespace-pre-wrap bg-zinc-800 p-2 rounded text-xs">{report.description || '-'}</p>
-                                              {report.photo_url && (
-                                                  <div>
-                                                      <strong className="text-zinc-400 block mb-1">Foto:</strong>
-                                                      <img src={report.photo_url} alt="Foto Laporan Darurat" className="max-w-full h-auto rounded max-h-48 object-contain" />
-                                                  </div>
-                                              )}
-                                          </div>
-                                          {/* Col 3: Assignment */}
-                                          <div className="space-y-2 text-sm">
-                                               <h4 className="font-semibold text-base text-zinc-100 mb-1">Penugasan Relawan</h4>
-                                               {report.assigned_to && assignedResponder ? (
-                                                   <p className="p-2 bg-green-900/50 rounded border border-green-700">
-                                                       <strong className="text-green-300">Ditugaskan ke:</strong> {assignedResponder.name} ({assignedResponder.role})
-                                                   </p>
-                                               ) : report.status === 'menunggu' || report.status === 'diproses' ? (
-                                                  <form onSubmit={(e) => {
-                                                      e.preventDefault();
-                                                      const selectElement = e.currentTarget.elements.namedItem(`assignee-${report.id}`) as HTMLSelectElement;
-                                                      handleAssignEmergencyResponder(report.id, selectElement.value);
-                                                  }} className="space-y-2">
-                                                      <select 
-                                                          name={`assignee-${report.id}`}
-                                                          defaultValue="" 
-                                                          required
-                                                          className="w-full text-sm bg-zinc-700 border border-zinc-600 rounded px-3 py-1.5 text-zinc-100 focus:ring-blue-500 focus:border-blue-500"
-                                                          disabled={assignmentLoading[report.id]}
-                                                      >
-                                                          <option value="" disabled>Pilih Relawan...</option>
-                                                          {organizationMembers.map(member => (
-                                                              <option key={member.id} value={member.id}>{member.name} ({member.role})</option>
-                                                          ))}
-                                                      </select>
-                                                      <button 
-                                                          type="submit" 
-                                                          className="w-full px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                                                          disabled={assignmentLoading[report.id]}
-                                                      >
-                                                          {assignmentLoading[report.id] ? 'Menugaskan...' : 'Tugaskan Relawan'}
-                                                      </button>
-                                                  </form>
-                                               ) : (
-                                                   <p className="text-zinc-500 italic">Laporan {report.status}.</p>
-                                               )}
-                                          </div>
-                                      </div>
-                                  </li>
-                              );
-                          })}
-                      </ul>
-                  ) : (
-                      <p className="text-zinc-400 italic">Tidak ada laporan darurat terkait dengan respon ini.</p>
-                  )
-             )}
+            {/* Tab Content */}
+            <div className="mt-4">
+                {activeLogTab === 'reports' && (
+                    <div>
+                        <h3 className="text-md font-semibold mb-3">Laporan Darurat Terkait ({emergencyReports.length})</h3>
+                        {emergencyReports.length === 0 ? (
+                            <p className="text-zinc-400 italic">Tidak ada laporan darurat terkait dengan respon ini dalam radius {GEOFENCE_RADIUS_METERS / 1000}km.</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {emergencyReports.map((report) => (
+                                    <div key={report.id} className="bg-zinc-700/50 rounded-md p-4 shadow">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className="font-semibold text-white">{report.full_name || 'Nama Tidak Tersedia'}</h4>
+                                                <p className="text-sm text-zinc-300 mt-1">{report.description || 'Deskripsi Tidak Tersedia'}</p>
+                                                <p className="text-xs text-zinc-400 mt-2">
+                                                    Tipe: <span className="font-medium">{report.assistance_type || 'none'}</span>, 
+                                                    Status: <span className="font-medium">{report.status || 'unknown'}</span>
+                                                </p>
+                                            </div>
+                                            {/* --- Add Assign Button Here --- */}
+                                            {userRole === 'org_admin' && (report.status === 'pending' || report.status === 'verified') && (
+                                                <button
+                                                    onClick={() => openAssignModal(report)}
+                                                    className="ml-4 px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded transition-colors shadow whitespace-nowrap"
+                                                    title="Assign Responder"
+                                                    disabled={assignmentSubmitLoading} // Disable while assigning
+                                                >
+                                                    Tugaskan
+                                                </button>
+                                            )}
+                                            {/* --- End Assign Button --- */}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+                 {/* ... (keep existing content for other tabs: activity, inventory, delivery) ... */}
+                 {/* == Aktivitas Tab == */} 
+                {activeLogTab === 'activity' && (
+                    <div className="space-y-6">
+                        {/* Manual Activity Log Form */} 
+                        <form onSubmit={handleActivitySubmit} className="p-4 bg-zinc-700/30 rounded-lg border border-zinc-700 space-y-3">
+                            <h3 className="text-md font-semibold">Tambah Log Aktivitas Manual</h3>
+                            <div>
+                                <label htmlFor="activity_what" className="block text-sm font-medium text-zinc-300 mb-1">Apa yang terjadi? <span className="text-red-400">*</span></label>
+                                <input type="text" id="activity_what" name="what" value={activityForm.what} onChange={(e) => handleFormChange(e, setActivityForm)} required className="w-full text-sm bg-zinc-700 border border-zinc-600 rounded px-3 py-1.5" />
+                            </div>
+                            <div>
+                                <label htmlFor="activity_when" className="block text-sm font-medium text-zinc-300 mb-1">Kapan? <span className="text-red-400">*</span></label>
+                                <input type="datetime-local" id="activity_when" name="when_time" value={activityForm.when_time} onChange={(e) => handleFormChange(e, setActivityForm)} required className="w-full text-sm bg-zinc-700 border border-zinc-600 rounded px-3 py-1.5" />
+                            </div>
+                            <div>
+                                <label htmlFor="activity_where" className="block text-sm font-medium text-zinc-300 mb-1">Di mana?</label>
+                                <input type="text" id="activity_where" name="where_location" value={activityForm.where_location} onChange={(e) => handleFormChange(e, setActivityForm)} className="w-full text-sm bg-zinc-700 border border-zinc-600 rounded px-3 py-1.5" />
+                            </div>
+                            <div>
+                                <label htmlFor="activity_notes" className="block text-sm font-medium text-zinc-300 mb-1">Catatan Tambahan</label>
+                                <textarea id="activity_notes" name="notes" value={activityForm.notes} onChange={(e) => handleFormChange(e, setActivityForm)} rows={2} className="w-full text-sm bg-zinc-700 border border-zinc-600 rounded px-3 py-1.5"></textarea>
+                            </div>
+                            <div className="text-right">
+                                <button type="submit" disabled={formSubmitting} className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50">
+                                    {formSubmitting ? 'Menyimpan...' : 'Simpan Log'}
+                                </button>
+                            </div>
+                        </form>
 
-             {/* Activity Logs & Form */} 
-             {activeLogTab === 'activity' && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-3 text-zinc-200">Tambah Log Aktivitas</h3>
-                  <form onSubmit={handleActivitySubmit} className="space-y-3 mb-6 p-4 bg-zinc-700/50 rounded-md">
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Activity Log List */} 
                         <div>
-                          <label htmlFor="activity-what" className="block text-xs font-medium text-zinc-300 mb-1">Apa? <span className="text-red-400">*</span></label>
-                          <input type="text" id="activity-what" name="what" value={activityForm.what} onChange={(e) => handleFormChange(e, setActivityForm)} required className="w-full text-sm ..." />
+                            <h3 className="text-md font-semibold mb-3">Riwayat Aktivitas ({activityLogs.length})</h3>
+                            {activityLogs.length === 0 ? (
+                                <p className="text-zinc-400 italic">Belum ada aktivitas tercatat.</p>
+                            ) : (
+                                <ul className="space-y-3">
+                                    {activityLogs.map(log => (
+                                        <li key={log.id} className="bg-zinc-700/50 p-3 rounded text-sm">
+                                            <p className="text-zinc-200">
+                                                <strong className="font-medium">{log.what || log.description || 'Aktivitas tidak dijelaskan'}</strong>
+                                                {log.where_location && <span className="text-zinc-400"> di {log.where_location}</span>}
+                                            </p>
+                                            <p className="text-xs text-zinc-400 mt-1">
+                                                {formatDateTime(log.when_time || log.created_at)} 
+                                                {/* TODO: Fetch/Display user name based on log.user_id if available */} 
+                                                {log.user_id && <span className="ml-2">(oleh: {log.user_id.substring(0,8)}...)</span>} 
+                                            </p>
+                                            {log.notes && <p className="text-xs text-zinc-300 mt-1 pt-1 border-t border-zinc-600/50">Catatan: {log.notes}</p>}
+                                            {/* Optionally display log.details for assignment type */} 
+                                            {log.type === 'assignment' && log.details && (
+                                                <p className="text-xs text-cyan-400 mt-1">Detail: Ditugaskan kepada {log.details.assigned_user_name as string || log.details.assigned_user_id as string}</p> /* Added type assertion */
+                                            )}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
-                         <div>
-                          <label htmlFor="activity-when_time" className="block text-xs font-medium text-zinc-300 mb-1">Kapan? <span className="text-red-400">*</span></label>
-                          <input type="datetime-local" id="activity-when_time" name="when_time" value={activityForm.when_time} onChange={(e) => handleFormChange(e, setActivityForm)} required className="w-full text-sm ..." />
-                        </div>
-                     </div>
-                      <div>
-                          <label htmlFor="activity-where_location" className="block text-xs font-medium text-zinc-300 mb-1">Di mana?</label>
-                          <input type="text" id="activity-where_location" name="where_location" value={activityForm.where_location} onChange={(e) => handleFormChange(e, setActivityForm)} className="w-full text-sm ..." />
-                      </div>
-                      <div>
-                         <label htmlFor="activity-notes" className="block text-xs font-medium text-zinc-300 mb-1">Catatan</label>
-                         <textarea id="activity-notes" name="notes" value={activityForm.notes} onChange={(e) => handleFormChange(e, setActivityForm)} rows={2} className="w-full text-sm ..."></textarea>
-                      </div>
-                      <div className="text-right">
-                         <button type="submit" disabled={formSubmitting} className="px-4 py-1.5 text-sm ...">{formSubmitting ? 'Menyimpan...' : 'Tambah Aktivitas'}</button>
-                      </div>
-                  </form>
-                  <h3 className="text-lg font-semibold mb-3 text-zinc-200">Daftar Log Aktivitas</h3>
-                  {activityLogs.length > 0 ? (<ul className="space-y-3">{activityLogs.map(log => (<li key={log.id} className="text-sm ...">...</li>))}</ul>) : (<p>...</p>)}
-                </div>
-             )}
-
-             {/* Inventory Logs & Form */} 
-             {activeLogTab === 'inventory' && (
-                 <div>
-                     <h3 className="text-lg font-semibold mb-3 text-zinc-200">Tambah Log Inventaris</h3>
-                     <form onSubmit={handleInventorySubmit} className="space-y-3 mb-6 p-4 bg-zinc-700/50 rounded-md">
-                         <div>
-                           <label htmlFor="inv-item_name" className="block text-xs font-medium text-zinc-300 mb-1">Nama Item <span className="text-red-400">*</span></label>
-                           <input type="text" id="inv-item_name" name="item_name" value={inventoryForm.item_name} onChange={(e) => handleFormChange(e, setInventoryForm)} required className="w-full text-sm ..." />
-                         </div>
-                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                             {/* Quantity fields */}
-                             <div><label htmlFor="inv-start" className="...">Qty Awal</label><input type="number" id="inv-start" name="quantity_start" value={inventoryForm.quantity_start} onChange={(e) => handleFormChange(e, setInventoryForm)} className="..." /></div>
-                             <div><label htmlFor="inv-received" className="...">Qty Diterima</label><input type="number" id="inv-received" name="quantity_received" value={inventoryForm.quantity_received} onChange={(e) => handleFormChange(e, setInventoryForm)} className="..." /></div>
-                             <div><label htmlFor="inv-delivered" className="...">Qty Dikirim</label><input type="number" id="inv-delivered" name="quantity_delivered" value={inventoryForm.quantity_delivered} onChange={(e) => handleFormChange(e, setInventoryForm)} className="..." /></div>
-                             <div><label htmlFor="inv-end" className="...">Qty Akhir</label><input type="number" id="inv-end" name="quantity_end" value={inventoryForm.quantity_end} onChange={(e) => handleFormChange(e, setInventoryForm)} className="..." /></div>
-                         </div>
-                          <div>
-                             <label htmlFor="inv-notes" className="block text-xs font-medium text-zinc-300 mb-1">Catatan</label>
-                             <textarea id="inv-notes" name="notes" value={inventoryForm.notes} onChange={(e) => handleFormChange(e, setInventoryForm)} rows={2} className="w-full text-sm ..."></textarea>
-                          </div>
-                          <div className="text-right">
-                             <button type="submit" disabled={formSubmitting} className="px-4 py-1.5 text-sm ...">{formSubmitting ? 'Menyimpan...' : 'Tambah Inventaris'}</button>
-                          </div>
-                     </form>
-                     <h3 className="text-lg font-semibold mb-3 text-zinc-200">Daftar Log Inventaris</h3>
-                     {inventoryLogs.length > 0 ? (<div className="overflow-x-auto"><table className="min-w-full text-sm">...</table></div>) : (<p>...</p>)}
-                 </div>
-             )}
-
-             {/* Delivery Logs & Form */} 
-             {activeLogTab === 'delivery' && (
-                <div>
-                   <h3 className="text-lg font-semibold mb-3 text-zinc-200">Tambah Log Pengiriman</h3>
-                   <form onSubmit={handleDeliverySubmit} className="space-y-3 mb-6 p-4 bg-zinc-700/50 rounded-md">
-                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                           <div>
-                               <label htmlFor="del-item_name" className="...">Nama Item <span className="text-red-400">*</span></label>
-                               <input type="text" id="del-item_name" name="item_name" value={deliveryForm.item_name} onChange={(e) => handleFormChange(e, setDeliveryForm)} required className="..." />
-                           </div>
-                           <div>
-                               <label htmlFor="del-quantity" className="...">Jumlah <span className="text-red-400">*</span></label>
-                               <input type="number" id="del-quantity" name="quantity" value={deliveryForm.quantity} onChange={(e) => handleFormChange(e, setDeliveryForm)} required className="..." />
-                           </div>
-                           <div>
-                               <label htmlFor="del-destination" className="...">Tujuan</label>
-                               <input type="text" id="del-destination" name="destination" value={deliveryForm.destination} onChange={(e) => handleFormChange(e, setDeliveryForm)} className="..." />
-                           </div>
-                       </div>
-                        <div>
-                           <label htmlFor="del-notes" className="block text-xs font-medium text-zinc-300 mb-1">Catatan</label>
-                           <textarea id="del-notes" name="notes" value={deliveryForm.notes} onChange={(e) => handleFormChange(e, setDeliveryForm)} rows={2} className="w-full text-sm ..."></textarea>
-                        </div>
-                        <div className="text-right">
-                           <button type="submit" disabled={formSubmitting} className="px-4 py-1.5 text-sm ...">{formSubmitting ? 'Menyimpan...' : 'Tambah Pengiriman'}</button>
-                        </div>
-                   </form>
-                   <h3 className="text-lg font-semibold mb-3 text-zinc-200">Daftar Log Pengiriman</h3>
-                   {deliveryLogs.length > 0 ? (<div className="overflow-x-auto"><table className="min-w-full text-sm">...</table></div>) : (<p>...</p>)}
-                </div>
-             )}
-
-           </div>
+                    </div>
+                )}
+            </div>
         </div>
       </div>
+
+      {/* --- Render Assignment Modal --- */} 
+      <AssignmentModal
+        isOpen={isAssignModalOpen}
+        onClose={closeAssignModal}
+        onSubmit={handleAssignSubmit}
+        // Pass only responders fetched for the org
+        responders={organizationMembers.filter(m => m.role === 'org_responder').map(m => ({ id: m.id, name: m.name }))}
+        selectedResponder={selectedResponderId}
+        setSelectedResponder={setSelectedResponderId}
+        isLoading={assignmentSubmitLoading} // Pass loading state
+      />
+      {/* --- End Assignment Modal --- */}
+
     </div>
   );
 }

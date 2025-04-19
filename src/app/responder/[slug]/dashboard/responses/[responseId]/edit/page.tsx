@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@/../lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { toast } from 'react-hot-toast';
+import dynamic from 'next/dynamic';
 
 // Define type for Disaster Response data (reuse or import if defined elsewhere)
 type DisasterResponse = {

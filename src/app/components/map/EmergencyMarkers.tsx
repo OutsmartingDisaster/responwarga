@@ -9,11 +9,15 @@ import MarkerPopup from './MarkerPopup';
 import { supabase } from '@/lib/supabase';
 import { getOffsetPosition, resetPositionCounts } from './MarkerUtils';
 
+// Define the radius in meters (e.g., 15km)
+const GEOFENCE_RADIUS_METERS = 15000;
+
 type EmergencyType = 'all' | 'evacuation' | 'food_water' | 'medical' | 'other' | 'none';
 
 interface EmergencyMarkersProps {
   formatDate: (dateString: string) => string;
   filterType?: EmergencyType;
+  reportsData?: any[] | null;
 }
 
 /**
@@ -22,111 +26,39 @@ interface EmergencyMarkersProps {
  * 
  * @param formatDate - Function to format date strings for display
  */
-export default function EmergencyMarkers({ formatDate, filterType = 'all' }: EmergencyMarkersProps) {
+export default function EmergencyMarkers({ formatDate, filterType = 'all', reportsData }: EmergencyMarkersProps) {
   const [markers, setMarkers] = useState<EmergencyMarker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch emergency reports and subscribe to realtime updates
+  // No longer fetch data here, rely on props
   useEffect(() => {
-    console.log('Filter type changed:', filterType);
-    fetchEmergencyReports();
-
-    // Supabase Realtime subscription
-    const channel = supabase
-      .channel('emergency_reports_realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'emergency_reports' },
-        (payload) => {
-          console.log('Realtime update:', payload);
-          fetchEmergencyReports();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-      resetPositionCounts();
-    };
-  }, [filterType]);
-
-  /**
-   * Fetch emergency reports from Supabase database
-   * Transforms the data to match the EmergencyMarker interface
-   */
-  const fetchEmergencyReports = async () => {
-    try {
-      setLoading(true);
-      console.log('Fetching emergency reports with filter:', filterType);
-      
-      // Updated query with joins for assignee and organization name
-      let query = supabase
-        .from('emergency_reports')
-        .select(`
-          *,
-          assignee:profiles ( name ),
-          organization:disaster_responses!inner!emergency_reports_disaster_response_id_fkey ( org_name:name )
-        `)
-        .order('created_at', { ascending: false });
-
-      // Apply type filter if specified
-      if (filterType !== 'all') {
-        query = query.eq('assistance_type', filterType);
-      }
-
-      // Adjust query if using fallback select
-      // if (filterType !== 'all') { query = query.eq('assistance_type', filterType); }
-      // query = query.eq('assignee.user_id', 'emergency_reports.assigned_to'); // Manual join condition if needed
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      console.log('Emergency data with assignee:', data);
-      
-      if (!data || data.length === 0) {
-        console.log('No emergency reports found for filter:', filterType);
-        setMarkers([]);
-        setLoading(false);
-        return;
-      }
-
-      // Transform the data including assignee name and org name
-      const formattedData: EmergencyMarker[] = data.map((item: any) => ({
-        id: item.id,
-        latitude: item.latitude,
-        longitude: item.longitude,
-        full_name: item.full_name,
-        description: item.description,
-        assistance_type: item.assistance_type || 'none',
-        status: item.status || 'needs_verification',
-        photo_url: item.photo_url,
-        created_at: item.created_at,
-        // Extract assignee name - structure might change slightly if profiles is null
-        assignee_name: item.assignee?.name || null, 
-        assignee_org_name: item.organization?.org_name || null 
-      }));
-
-      console.log('Formatted emergency markers:', formattedData);
-      setMarkers(formattedData);
-    } catch (err: any) {
-      // Log the full error object and specific properties for better debugging
-      console.error('Error fetching emergency reports:', err);
-      console.error('Supabase error details:', {
-        message: err.message,
-        details: err.details,
-        hint: err.hint,
-        code: err.code,
-      });
-      setError(err.message || 'Unknown error fetching reports');
-    } finally {
-      setLoading(false);
+    console.log('EmergencyMarkers received reportsData prop:', reportsData); // Log the received prop
+    setLoading(true);
+    setError(null);
+    if (reportsData) {
+        // Directly format the data passed via props
+        const formattedData: EmergencyMarker[] = reportsData.map((item: any) => ({
+            id: item.id,
+            latitude: item.latitude,
+            longitude: item.longitude,
+            full_name: item.full_name,
+            description: item.description,
+            assistance_type: item.assistance_type || 'none',
+            status: item.status || 'needs_verification',
+            photo_url: item.photo_url,
+            created_at: item.created_at,
+            assignee_name: item.assignee?.name || null, // Assuming assignee relationship might still be relevant if fetched in parent
+            assignee_org_name: item.organization?.org_name || null 
+        }));
+        console.log('Formatted emergency markers from props:', formattedData);
+        setMarkers(formattedData);
+    } else {
+        setMarkers([]); // Clear markers if no data is passed
+        console.log('No reportsData prop provided.');
     }
-  };
+    setLoading(false);
+  }, [reportsData]); // Re-run effect if reportsData prop changes
 
   // For debugging
   console.log('Rendering emergency markers, count:', markers.length);
@@ -136,7 +68,7 @@ export default function EmergencyMarkers({ formatDate, filterType = 'all' }: Eme
   if (error) return null;
 
   // Reset position tracking before rendering markers
-  resetPositionCounts();
+  // resetPositionCounts();
 
   // Create test markers if no real markers exist
   if (markers.length === 0) {

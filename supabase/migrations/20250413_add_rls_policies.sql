@@ -6,6 +6,7 @@ ALTER TABLE public.daily_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.responder_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.contributions ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to get user's organization ID
 CREATE OR REPLACE FUNCTION get_user_organization_id(user_id uuid) -- Reverted parameter name
@@ -152,3 +153,44 @@ CREATE POLICY "Allow responders to manage own activity logs" ON public.activity_
   FOR ALL -- INSERT, UPDATE, DELETE for own logs
   USING (responder_id = get_profile_id(auth.uid()))
   WITH CHECK (responder_id = get_profile_id(auth.uid()));
+
+-- Contributions Policies
+DROP POLICY IF EXISTS "Public can read all contributions" ON public.contributions;
+CREATE POLICY "Public can read all contributions"
+  ON public.contributions
+  FOR SELECT
+  USING (true);
+
+-- Create a view to restrict contact info
+DROP VIEW IF EXISTS public.contributions_public CASCADE;
+CREATE OR REPLACE VIEW public.contributions_public AS
+SELECT
+  id, latitude, longitude, contribution_type, status, description, created_at, updated_at, photo_url, address, capacity, facilities, quantity, unit, assigned_to, responder_status, assigned_organization_id, emergency_report_id, -- public fields
+  CASE
+    WHEN show_contact_info
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE user_id = auth.uid()
+          AND role IN ('admin', 'org_admin', 'responder')
+      )
+    THEN full_name ELSE NULL END AS full_name,
+  CASE
+    WHEN show_contact_info
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE user_id = auth.uid()
+          AND role IN ('admin', 'org_admin', 'responder')
+      )
+    THEN phone_number ELSE NULL END AS phone_number,
+  CASE
+    WHEN show_contact_info
+      OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE user_id = auth.uid()
+          AND role IN ('admin', 'org_admin', 'responder')
+      )
+    THEN email ELSE NULL END AS email
+FROM public.contributions;
+
+-- Grant select on the view to all users
+GRANT SELECT ON public.contributions_public TO anon, authenticated;

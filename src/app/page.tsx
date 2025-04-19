@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import EmergencyReportForm from './components/EmergencyReportForm';
 import ContributionForm from './components/ContributionForm';
@@ -8,6 +8,7 @@ import SOSButton from './components/SOSButton';
 import UserPolicyModal from './components/UserPolicyModal';
 import AboutModal from './components/AboutModal';
 import MarqueeBanner from './components/MarqueeBanner';
+import { useSupabase } from '../contexts/SupabaseClientProvider';
 
 type FilterType = 'all' | 'emergency' | 'contribution';
 type EmergencyType = 'all' | 'evacuation' | 'food_water' | 'medical' | 'other' | 'none';
@@ -33,6 +34,44 @@ export default function Home() {
   const [emergencyType, setEmergencyType] = useState<EmergencyType>('all');
   const [contributionType, setContributionType] = useState<ContributionType>('all');
 
+  // State for fetched emergency reports
+  const [emergencyReports, setEmergencyReports] = useState<any[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
+  const [reportsError, setReportsError] = useState<string | null>(null);
+
+  // Get Supabase client instance from context
+  const supabase = useSupabase();
+
+  // Fetch emergency reports data
+  useEffect(() => {
+    // Ensure supabase client is available before fetching
+    if (!supabase) return;
+
+    const fetchReports = async () => {
+      setReportsLoading(true);
+      setReportsError(null);
+      try {
+        // Fetch only reports relevant for the public map
+        const { data, error } = await supabase
+          .from('emergency_reports')
+          .select('*')
+          .in('status', ['verified', 'ditugaskan', 'on progress']);
+
+        if (error) throw error;
+        setEmergencyReports(data || []);
+        console.log('Fetched emergency reports for map:', data);
+      } catch (err: any) {
+        console.error("Error fetching emergency reports:", err);
+        setReportsError(err.message);
+        setEmergencyReports([]);
+      } finally {
+        setReportsLoading(false);
+      }
+    };
+
+    fetchReports();
+  }, [supabase]);
+
   const handleFormSuccess = (latitude: number, longitude: number) => {
     setMapCenter([latitude, longitude]);
   };
@@ -46,6 +85,7 @@ export default function Home() {
           filterType={filterType}
           emergencyType={emergencyType}
           contributionType={contributionType}
+          emergencyReportsData={emergencyReports}
         />
       </div>
 

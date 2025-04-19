@@ -2,14 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { useSupabase } from "@/contexts/SupabaseClientProvider";
 
 export default function MasukPage() {
   const router = useRouter();
+  const supabase = useSupabase();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -23,6 +20,12 @@ export default function MasukPage() {
     setLoading(true);
     setError(null);
 
+    if (!supabase) {
+      setError("Supabase client is not available. Please try again shortly.");
+      setLoading(false);
+      return;
+    }
+
     if (isRegister) {
       const { error } = await supabase.auth.signUp({
         email,
@@ -30,58 +33,50 @@ export default function MasukPage() {
         options: {
           data: {
             username,
-            role: role, // Use selected role
+            role: role,
           },
         },
       });
       if (error) {
         setError(error.message);
       } else {
-        // Redirect based on role after signup
-        if (role === 'org_admin') {
-          router.push('/onboarding/organization');
-        } else {
-          // After registration, fetch the org slug for responder and redirect
-          const user = (await supabase.auth.getUser()).data.user;
-          if (user) {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('organization_id')
-              .eq('user_id', user.id)
+        const user = (await supabase.auth.getUser()).data.user;
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('organization_id')
+            .eq('user_id', user.id)
+            .single();
+          if (profile?.organization_id) {
+            const { data: orgData } = await supabase
+              .from('organizations')
+              .select('slug')
+              .eq('id', profile.organization_id)
               .single();
-            if (profile?.organization_id) {
-              const { data: orgData } = await supabase
-                .from('organizations')
-                .select('slug')
-                .eq('id', profile.organization_id)
-                .single();
-              if (orgData?.slug) {
-                console.log(`[Login Debug] Responder User: ${user.id}, Org ID: ${profile.organization_id}, Found Slug: ${orgData.slug}, Redirecting...`);
-                router.push(`/responder/${orgData.slug}/dashboard`);
-              } else {
-                console.error(`[Login Debug] Responder User: ${user.id}, Org ID: ${profile.organization_id}, Slug NOT FOUND! Setting error.`);
-                setError('Organisasi tidak ditemukan.');
-              }
+            if (orgData?.slug) {
+              console.log(`[Login Debug] Responder User: ${user.id}, Org ID: ${profile.organization_id}, Found Slug: ${orgData.slug}, Redirecting...`);
+              router.push(`/responder/${orgData.slug}/dashboard`);
             } else {
-              setError('Akun belum terhubung ke organisasi.');
+              console.error(`[Login Debug] Responder User: ${user.id}, Org ID: ${profile.organization_id}, Slug NOT FOUND! Setting error.`);
+              setError('Organisasi tidak ditemukan.');
             }
           } else {
-            setError('Gagal mendapatkan data pengguna.');
+            setError('Akun belum terhubung ke organisasi.');
           }
+        } else {
+          setError('Gagal mendapatkan data pengguna.');
         }
       }
     } else {
-      // Login mode
-      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email: username, password }); // Assuming username is email for login
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email: username, password });
 
       if (loginError) {
         setError(loginError.message);
       } else if (loginData.user) {
-        // Fetch profile to check role and organization
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role, organization_id')
-          .eq('user_id', loginData.user.id) // Use user_id from auth
+          .eq('user_id', loginData.user.id)
           .single();
 
         if (profileError) {
@@ -89,7 +84,6 @@ export default function MasukPage() {
         } else if (profile) {
           if (profile.role === 'org_admin') {
             if (profile.organization_id) {
-              // Fetch org slug
               const { data: orgData } = await supabase
                 .from('organizations')
                 .select('slug')
@@ -107,7 +101,6 @@ export default function MasukPage() {
               router.push('/onboarding/organization');
             }
           } else {
-            // Responder: fetch org slug and redirect
             if (profile.organization_id) {
               const { data: orgData } = await supabase
                 .from('organizations')
@@ -140,9 +133,9 @@ export default function MasukPage() {
       <h1 className="text-2xl font-bold mb-4">{isRegister ? 'Daftar Akun' : 'Masuk'}</h1>
       <form className="space-y-4 w-full max-w-sm" onSubmit={handleSubmit}>
         <input
-          type={isRegister ? "text" : "email"} // Use email for login, username for register
+          type={isRegister ? "text" : "email"}
           placeholder={isRegister ? "Username" : "Email"}
-          value={username} // Keep state name for simplicity, but it holds email on login
+          value={username}
           onChange={(e) => setUsername(e.target.value)}
           required
           className="w-full p-2 rounded bg-zinc-800 border border-zinc-600"

@@ -1,13 +1,13 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-export function createClient() {
+export async function createClient() {
   const cookieStore = cookies()
 
   // Create a server's supabase client with newly configured cookie,passing in
   // the cookiesExpires and cookiesPath parameters.
   // If the server supports detecting cookies automatically from the request
-  // header, explore the possibility of using the \`createServerClient\`
+  // header, explore the possibility of using the `createServerClient`
   // function with minimal configuration for detecting cookies.
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

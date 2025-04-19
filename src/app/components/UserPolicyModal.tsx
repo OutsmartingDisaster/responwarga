@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
 
 interface UserPolicyModalProps {
   onClose: () => void;
 }
 
 export default function UserPolicyModal({ onClose }: UserPolicyModalProps) {
+  const supabase = createClient();
   const [policyContent, setPolicyContent] = useState<string>('Memuat kebijakan pengguna...');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

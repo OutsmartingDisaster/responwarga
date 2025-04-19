@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
 
 interface AboutModalProps {
   onClose: () => void;
 }
 
 export default function AboutModal({ onClose }: AboutModalProps) {
+  const supabase = createClient();
   const [content, setContent] = useState<string>('Memuat informasi...');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

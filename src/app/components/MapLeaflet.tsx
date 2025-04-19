@@ -6,6 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import EmergencyMarkers from './map/EmergencyMarkers';
 import ContributionMarkers from './map/ContributionMarkers';
+import { resetPositionCounts } from './map/MarkerUtils';
 
 type FilterType = 'all' | 'emergency' | 'contribution';
 type EmergencyType = 'all' | 'evacuation' | 'food_water' | 'medical' | 'other' | 'none';
@@ -20,6 +21,7 @@ interface MapLeafletProps {
   filterType?: FilterType;
   emergencyType?: EmergencyType;
   contributionType?: ContributionType;
+  emergencyReportsData?: any[] | null;
 }
 
 /**
@@ -40,7 +42,8 @@ const MapLeaflet = ({
   className = "w-full h-full",
   filterType = 'all',
   emergencyType = 'all',
-  contributionType = 'all'
+  contributionType = 'all',
+  emergencyReportsData = null
 }: MapLeafletProps) => {
   
   // Set up Leaflet configuration and styles on component mount
@@ -95,6 +98,9 @@ const MapLeaflet = ({
     );
   };
 
+  // Reset marker position counts before rendering markers
+  resetPositionCounts();
+
   return (
     <MapContainer
       center={center}
@@ -118,6 +124,7 @@ const MapLeaflet = ({
         <EmergencyMarkers 
           formatDate={formatDate} 
           filterType={emergencyType}
+          reportsData={emergencyReportsData}
         />
       )}
 

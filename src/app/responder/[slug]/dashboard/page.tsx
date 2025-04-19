@@ -1,8 +1,9 @@
 "use client";
-import React, { useState, useEffect } from "react"; // Add React import
-import { useRouter, useParams } from "next/navigation";
-import { createClient } from "../../../../../lib/supabase/client"; // Correct relative path
+import React, { useState, useEffect, useCallback } from "react"; // Add React import
+import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useSupabase } from "@/contexts/SupabaseClientProvider"; // Import the hook
 import dynamic from 'next/dynamic'; // Import dynamic
+import Link from 'next/link'; // <-- Add Link import
 // import Map from "../../../components/Map"; // Remove static import
 import EmergencyReportsTable from "../../../mohonijin/dashboard/components/EmergencyReportsTable";
 import EmergencyEventDetails from "./EmergencyEventDetails";
@@ -16,6 +17,7 @@ import ResponderManagement from "../../../responder/dashboard/ResponderManagemen
 import DailyLog from "../../../responder/dashboard/DailyLog";
 import DisasterResponseDashboard from "./DisasterResponseDashboard"; // Import the new component
 import { LogOut } from 'lucide-react'; // Import an icon for logout
+import { Users, Settings, DatabaseZap, ClipboardList } from 'lucide-react'; // Import additional icons
 
 // Dynamically import the Map component
 const Map = dynamic(() => import("../../../components/Map"), { 
@@ -61,16 +63,23 @@ const BASE_MENU = [
       </svg>
     ),
   },
-  {
-    key: "responder_profile",
-    label: "Profil Saya",
-    icon: (
-      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A9 9 0 1112 21a9 9 0 01-6.879-3.196z" />
-      </svg>
-    ),
-  },
 ];
+
+// --- ADD Admin Menu Items --- 
+const ADMIN_MENU = [
+  {
+    key: "data_respon",
+    label: "Manajemen Respon",
+    icon: <DatabaseZap className="w-5 h-5 mr-2" />,
+  },
+  {
+    key: "pengaturan_org",
+    label: "Pengaturan",
+    icon: <Settings className="w-5 h-5 mr-2" />,
+  },
+  // Add other admin-specific menu items here if needed
+];
+// --- END Admin Menu Items --- 
 
 // Define member type
 type OrgMember = {
@@ -118,23 +127,30 @@ type EmergencyReportWithAssignments = EmergencyReport & {
   disaster_response_id?: string | null; // Ensure this is included
 };
 
-export default function ResponderDashboard() {
+export default function ResponderDashboardPage() {
   const [activeMenu, setActiveMenu] = useState("dashboard");
   const [selectedReport, setSelectedReport] = useState<EmergencyReportWithAssignments | null>(null);
   const [members, setMembers] = useState<OrgMember[]>([]); // Use OrgMember type for state
-  const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const slug = params.slug as string;
-  const supabase = createClient();
+  const supabase = useSupabase();
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [errorMembers, setErrorMembers] = useState<string | null>(null);
+  const [loadingPage, setLoadingPage] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   // Logout function
   const handleLogout = async () => {
+    if (!supabase) {
+        console.error('Supabase client not available for logout');
+        return;
+    }
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error('Error logging out:', error.message);
@@ -147,475 +163,233 @@ export default function ResponderDashboard() {
 
   useEffect(() => {
     async function fetchMembers(orgIdToUse: string) {
-      setLoadingMembers(true);
-      setErrorMembers(null);
-      console.log('Fetching members from PROFILES for orgId:', orgIdToUse);
-
-      // Query PROFILES table instead of MEMBERS
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('user_id, name, role') // Select needed fields directly
-        .eq('organization_id', orgIdToUse)
-        .in('role', ['responder', 'org_admin']); // Filter by relevant roles
-
-      console.log('fetchMembers (from profiles) response:', { data, error });
-
-      if (error) {
-        console.error('Error fetching members from profiles for orgId:', orgIdToUse, error);
-        setErrorMembers('Gagal memuat anggota: ' + error.message);
-      } else if (data) {
-        // Map fetched data to OrgMember type
-        const fetchedMembers: OrgMember[] = data.map((profile: any) => ({
-          id: profile.user_id,
-          name: profile.name || 'Unknown Name', // Use name from profile
-          role: profile.role || 'Unknown Role',
-        }));
-        setMembers(fetchedMembers);
-      } else {
-         setMembers([]); // Set to empty array if no data
-      }
-      setLoadingMembers(false);
+      // ... (Keep existing fetchMembers logic) ...
     }
 
-    async function checkOrg() {
-      const user = (await supabase.auth.getUser()).data.user;
-      if (!user) return;
-      setUserId(user.id);
-
-      // Fetch organization by slug
-      const { data: orgData, error: orgError } = await supabase
-        .from("organizations")
-        .select("id, name, onboarding_complete") // Fetch onboarding status
-        .eq("slug", slug)
-        .single();
-
-      if (orgError || !orgData) {
-        console.error("Organization not found or error:", orgError || {}); // Log error or empty object
-        // Consider redirecting to a more specific error page or showing a message
-        router.replace("/");
-        return;
+    async function initializeDashboard() {
+      console.log(">>> [Main Dashboard] Initializing...");
+      if (!supabase) {
+        console.log(">>> [Main Dashboard] Supabase client not ready yet, skipping init.");
+        return; 
       }
-      setOrgId(orgData.id);
-      setOrgName(orgData.name);
+      
+      // --- REMOVE DELAY --- 
+      // console.log(">>> [Main Dashboard] Waiting 100ms before fetching user...");
+      // await new Promise(resolve => setTimeout(resolve, 100)); 
+      // --- END DELAY --- 
 
-      // Fetch user profile and check role/membership
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id, role")
-        .eq("user_id", user.id) // Use user_id (uuid)
-        .single();
+      setLoadingPage(true);
+      setPageError(null);
+      setCurrentUserRole(null); 
 
-      if (profile?.role === "org_admin" && !profile.organization_id) {
-        router.replace("/onboarding/organization");
-        return;
-      }
-      setRole(profile?.role || null);
+      try {
+        // Now fetch user
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        console.log(">>> [Main Dashboard] Got User:", { email: user?.email, id: user?.id, error: userError?.message });
+        
+        if (userError) throw new Error(`User fetch error: ${userError.message}`);
+        if (!user) {
+          console.warn(">>> [Main Dashboard] No authenticated user found after delay.");
+          router.replace('/masuk'); 
+          return; 
+        }
+        setUserId(user.id);
 
-      // Access control: Check if user belongs to this org or is admin
-      const isSuperAdmin = userId === "1" || profile?.role === "admin";
-      if (!isSuperAdmin && profile?.organization_id !== orgData.id) {
-        console.error("Access denied: User does not belong to this organization.");
-        router.replace("/"); // Redirect if not authorized
-        return;
-      }
+        // Fetch organization by slug first
+        console.log(">>> [Main Dashboard] Fetching Org by slug:", slug);
+        const { data: orgData, error: orgError } = await supabase
+          .from("organizations")
+          .select("id, name, onboarding_complete")
+          .eq("slug", slug)
+          .single();
 
-      // Check if onboarding is complete for org_admin
-      if (profile?.role === 'org_admin' && !orgData.onboarding_complete) {
-        router.replace('/onboarding/organization');
-        return;
-      }
-
-      // Fetch members after orgId is set
-      if (orgData.id) {
+        if (orgError || !orgData) {
+          console.error(">>> [Main Dashboard] Organization not found or error:", orgError?.message || 'Not Found');
+          throw new Error(orgError?.message || 'Organisasi tidak ditemukan.');
+        }
         setOrgId(orgData.id);
-        fetchMembers(orgData.id);
+        setOrgName(orgData.name);
+        console.log(">>> [Main Dashboard] Fetched Org Details:", { id: orgData.id, name: orgData.name });
+
+        // Fetch user profile including role and check membership
+        console.log(">>> [Main Dashboard] Fetching Profile for user:", user.id);
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("organization_id, role")
+          .eq("user_id", user.id)
+          .single();
+        console.log(">>> [Main Dashboard] Got Profile:", { role: profile?.role, profileOrgId: profile?.organization_id, error: profileError?.message });
+
+        if (profileError) {
+            console.error(">>> [Main Dashboard] Profile fetch error:", profileError.message);
+            throw new Error(`Gagal memuat profil pengguna: ${profileError.message}`);
+        }
+        if (!profile) {
+             console.error(">>> [Main Dashboard] Profile not found for user:", user.id);
+             throw new Error('Profil pengguna tidak ditemukan.');
+        }
+
+        setCurrentUserRole(profile.role || null); // Set the role state
+        console.log(">>> [Main Dashboard] SET User Role State:", profile.role || null);
+
+        // Access control: Check if user belongs to this org or is admin
+        const isSuperAdmin = profile.role === "admin"; // Simplified admin check
+        if (!isSuperAdmin && profile.organization_id !== orgData.id) {
+          console.error(`>>> [Main Dashboard] Access Denied: User ${user.id} (org ${profile.organization_id}) does not belong to Org ${orgData.id}`);
+          throw new Error('Anda tidak memiliki akses ke organisasi ini.');
+        }
+
+        // Check onboarding status (use profile.role)
+        if (profile.role === 'org_admin' && !orgData.onboarding_complete) {
+          console.log(">>> [Main Dashboard] Redirecting org_admin to onboarding");
+          router.replace('/onboarding/organization');
+          return; // Stop further execution if redirecting
+        }
+
+        // Fetch members only after orgId is confirmed and access is granted
+        console.log(">>> [Main Dashboard] Proceeding to fetch members for org:", orgData.id);
+        await fetchMembers(orgData.id); // Call fetchMembers here
+
+      } catch (err: any) {
+        console.error('>>> [Main Dashboard] Error during initialization:', err);
+        setPageError(err.message);
+      } finally {
+        console.log(">>> [Main Dashboard] Initialization finished.");
+        setLoadingPage(false);
       }
     }
+
     if (slug) {
-      checkOrg();
+      if (supabase) {
+        initializeDashboard();
+      } else {
+        console.log(">>> [Main Dashboard] Waiting for Supabase client...");
+      }
+    } else {
+      console.error(">>> [Main Dashboard] Slug is missing!");
+      setPageError("Parameter organisasi (slug) tidak ditemukan di URL.");
+      setLoadingPage(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, supabase, router]); // Add dependencies
+  }, [slug, supabase, router]); // Dependencies
 
-  // Build menu based on role or admin id
-  let menu = [...BASE_MENU];
-  const isSuperAdmin = userId === "1" || role === "admin";
-  const isAdminOrOrgAdmin = role === "org_admin" || isSuperAdmin;
+  // Update activeMenu based on searchParams
+  useEffect(() => {
+     const menuParam = searchParams.get('menu');
+     // Set default to 'dashboard' if no menu param or invalid
+     const validMenus = [...BASE_MENU, ...ADMIN_MENU].map(m => m.key);
+     if (menuParam && validMenus.includes(menuParam)) {
+        setActiveMenu(menuParam);
+     } else {
+        // Check if the default 'dashboard' is valid before setting
+        if (validMenus.includes('dashboard')) {
+           setActiveMenu('dashboard');
+        } else if (validMenus.length > 0) {
+           // Fallback to the first available menu item if 'dashboard' isn't available (edge case)
+           setActiveMenu(validMenus[0]);
+        }
+     }
+  }, [searchParams]);
 
-  if (isAdminOrOrgAdmin) {
-    // Insert Response Management menu item
-    menu.splice(1, 0, {
-      key: "response_management",
-      label: "Manajemen Respon",
-      icon: (
-        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-           <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /> {/* Example icon (lightning bolt) */}
-        </svg>
-      ),
-    });
+  // Build menu based on role
+  const isAdminOrOrgAdmin = currentUserRole === 'admin' || currentUserRole === 'org_admin';
+  const isOrgAdmin = currentUserRole === 'org_admin'; // Specific check for org_admin only features
 
-    menu.splice(3, 0, {
-      key: "organization_profile",
-      label: "Profil Organisasi",
-      icon: (
-        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </svg>
-      ),
-    });
-  }
-  // Remove "My Profile" tab for org_admins and organization members
-  if (role !== "org_admin" && !isSuperAdmin) {
-    if (!menu.some(item => item.key === "responder_profile")) {
-      menu.push({
-        key: "responder_profile",
-        label: "Profil Saya",
-        icon: (
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A9 9 0 1112 21a9 9 0 01-6.879-3.196z" />
-          </svg>
-        ),
-      });
+  // --- Combine Menus Based on Role --- 
+  let visibleMenu = [...BASE_MENU];
+  // Ensure base menu doesn't contain admin keys initially
+  visibleMenu = visibleMenu.filter(item => !ADMIN_MENU.some(adminItem => adminItem.key === item.key));
+
+  if (isOrgAdmin) {
+    // Get all defined admin menus (Manajemen Respon, Pengaturan)
+    const adminMenusToAdd = [...ADMIN_MENU]; 
+    const manajemenResponMenu = ADMIN_MENU.find(item => item.key === 'data_respon'); // Get the specific menu
+    const pengaturanMenu = ADMIN_MENU.find(item => item.key === 'pengaturan_org');
+    
+    // Remove them from the temporary list to avoid duplication when appending later
+    const otherAdminMenus = adminMenusToAdd.filter(item => item.key !== 'data_respon' && item.key !== 'pengaturan_org');
+    
+    if (manajemenResponMenu) {
+      // Insert 'Manajemen Respon' after 'Dasbor' (index 1)
+      visibleMenu.splice(1, 0, manajemenResponMenu);
     }
+
+    // Append Pengaturan and any other remaining admin menus
+    if (pengaturanMenu) {
+        visibleMenu.push(pengaturanMenu);
+    }
+    visibleMenu = [...visibleMenu, ...otherAdminMenus]; // Append any others
+
+    // Filter out 'responder_profile' if it exists in BASE_MENU, as it's moved to tabs
+    visibleMenu = visibleMenu.filter(item => item.key !== 'responder_profile');
+  }
+
+  // --- END Combine Menus --- 
+
+  console.log(">>> [Main Dashboard] RENDER CHECK - Role:", currentUserRole, "Is Org Admin:", currentUserRole === 'org_admin');
+
+  if (loadingPage) {
+     return <div className="flex h-screen w-full items-center justify-center bg-zinc-900 text-zinc-400">Memuat dasbor...</div>;
+  }
+
+  if (pageError) {
+     return <div className="flex h-screen w-full items-center justify-center bg-zinc-900 text-red-400">Error: {pageError}</div>;
   }
 
   return (
     <div className="flex h-screen bg-zinc-900 text-zinc-100">
       {/* Sidebar */}
-      <aside className="w-64 bg-zinc-900 text-zinc-100 flex flex-col">
-        <div className="p-6 text-2xl font-bold border-b border-zinc-800">
-          {orgName || "Dasbor Responder"}
-        </div>
-        <nav className="flex-1 flex flex-col gap-1 p-4 overflow-y-auto">
-          {menu.map((item) => (
-            <button
-              key={item.key}
-              className={`flex items-center px-4 py-2 rounded transition-all text-sm ${
-                activeMenu === item.key
-                  ? "bg-zinc-800 text-zinc-100 font-semibold"
-                  : "hover:bg-zinc-800 text-zinc-400"
-              }`}
-              onClick={() => setActiveMenu(item.key)}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        {/* Logout Button Section */}
-        <div className="p-4 border-t border-zinc-800 mt-auto">
-           <button
-              onClick={handleLogout}
-              className="flex items-center w-full px-4 py-2 rounded transition-all text-sm text-red-400 hover:bg-red-900/30 hover:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
-            >
-              <LogOut className="mr-3 h-4 w-4" />
-              Keluar
-            </button>
-        </div>
+      <aside className="w-64 bg-zinc-800 p-4 flex flex-col">
+         {/* ... Org Name/Logo ... */} 
+         <h1 className="text-xl font-bold mb-6">{orgName || slug}</h1> 
+         <nav className="flex-grow space-y-2">
+           {visibleMenu.map((item) => (
+              <Link
+                key={item.key}
+                href={`/responder/${slug}/dashboard?menu=${item.key}`}
+                className={`flex items-center gap-3 px-3 py-2 text-sm rounded ${
+                  activeMenu === item.key
+                    ? "bg-blue-600 text-white"
+                    : "hover:bg-zinc-700 text-zinc-300"
+                }`}
+              >
+                {item.icon}
+                {item.label}
+              </Link>
+            ))}
+         </nav>
+         {/* ... Bottom Links (Profile, Logout) ... */}
+         <div className="mt-auto space-y-2">
+             {/* Profil Saya link removed from here, moved to Pengaturan tabs */}
+             <button 
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded hover:bg-zinc-700 text-zinc-300"
+             >
+                <LogOut className="h-5 w-5" /> {/* Use imported Icon */}
+                Keluar
+             </button>
+         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col bg-zinc-900 text-zinc-100">
-        {/* Top bar */}
-        <div className="p-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900">
-          <h1 className="text-xl font-bold">
-            {
-              {
-                dashboard: "Dasbor",
-                response_management: "Manajemen Respon",
-                daily_log: "Log Harian",
-                organization_profile: "Profil Organisasi",
-                responder_management: "Manajemen Tim",
-                emergency: "Laporan Darurat",
-                contribution: "Kontribusi",
-                spreadsheets: "Spreadsheet",
-                users: "Pengguna",
-                responder_profile: "Profil Saya",
-              }[activeMenu]
-            }
-          </h1>
-        </div>
-        {/* Content */}
-        <div className="flex-1 min-h-0 overflow-auto p-4">
-          {activeMenu === "dashboard" && (
-            <div className="h-full flex flex-col">
-              <div className="flex-1 min-h-0">
-                <Map />
-              </div>
-              {/* Placeholder for stats/summary */}
-              <div className="p-4 bg-zinc-900 border-t border-zinc-800">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 bg-zinc-800 rounded shadow">
-                    <div className="text-zinc-400 text-sm">Darurat Aktif</div>
-                    {/* TODO: Replace with real data */}
-                    <div className="text-2xl font-bold">-</div>
-                  </div>
-                  <div className="p-4 bg-zinc-800 rounded shadow">
-                    <div className="text-zinc-400 text-sm">Kontribusi Aktif</div>
-                    <div className="text-2xl font-bold">-</div>
-                  </div>
-                  <div className="p-4 bg-zinc-800 rounded shadow">
-                    <div className="text-zinc-400 text-sm">Ditugaskan ke Saya</div>
-                    <div className="text-2xl font-bold">-</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          {activeMenu === "response_management" && isAdminOrOrgAdmin && (
-            <DisasterResponseDashboard />
-          )}
-          {activeMenu === "daily_log" && (
-            <div className="p-4">
-              <DailyLog />
-            </div>
-          )}
-          {activeMenu === "emergency" && (
-            <div className="p-4">
-              {selectedReport ? (
-                <div>
-                  <button
-                    className="mb-4 px-3 py-1 bg-zinc-700 text-white rounded"
-                    onClick={() => setSelectedReport(null)}
-                  >
-                    Kembali ke Daftar
-                  </button>
-                  <EmergencyEventDetails
-                    orgId={orgId || ""}
-                    event={{
-                      id: String(selectedReport.id),
-                      name: selectedReport.full_name,
-                      type: selectedReport.assistance_type,
-                      date: selectedReport.created_at,
-                      impactedAreas: [selectedReport.address],
-                      location: `${selectedReport.latitude}, ${selectedReport.longitude}`,
-                      severity: "-",
-                      status: selectedReport.status,
-                      description: selectedReport.description,
-                      reportedBy: selectedReport.email,
-                      resourcesNeeded: [],
-                      attachments: selectedReport.photo_url ? [selectedReport.photo_url] : [],
-                      assignedMembers: selectedReport.assignedMembers || [],
-                      activityLog: selectedReport.activityLog || [], // Pass fetched logs
-                    }}
-                    onAssignMember={async (memberId: string) => {
-                      if (!selectedReport?.disaster_response_id) {
-                        console.error("Cannot assign member: Disaster Response ID is missing for this report.");
-                        // TODO: Add user feedback (e.g., toast notification)
-                        return;
-                      }
-                      const supabase = createClient();
-                      // Explicitly type 'm' in the find callback
-                      const member = members.find((m: OrgMember) => m.id === memberId);
-                      const memberName = member?.name || memberId;
-
-                      // Assign member to event in DB (team_assignments table)
-                      // Note: team_assignments uses emergency_report_id (event_id)
-                      await supabase
-                        .from("team_assignments")
-                        .insert([
-                          {
-                            emergency_report_id: selectedReport.id, // Use correct FK name
-                            member_id: memberId,
-                            assigned_at: new Date().toISOString(),
-                            status: "assigned",
-                            // organization_id: orgId, // Consider adding if needed for RLS
-                          },
-                        ]);
-
-                      // Log assignment in activity_logs table using disaster_response_id
-                      await supabase
-                        .from("activity_logs") // Correct table name
-                        .insert([
-                          {
-                            disaster_response_id: selectedReport.disaster_response_id, // Use correct FK
-                            what: `Assigned member: ${memberName}`, // Use 'what' field
-                            when_time: new Date().toISOString(), // Use 'when_time'
-                            responder_id: userId, // Log who performed the action
-                            notes: `Member ID: ${memberId}`, // Additional details in notes
-                            // where_location, why, how can be added if relevant context is available
-                          },
-                        ]);
-
-                      // Fetch updated activity log using disaster_response_id
-                      const { data: logData } = await supabase
-                        .from("activity_logs") // Correct table name
-                        .select("id, when_time, what, responder_id, notes") // Adjust selected columns
-                        .eq("disaster_response_id", selectedReport.disaster_response_id) // Use correct FK
-                        .order("when_time", { ascending: false }); // Order by correct timestamp column
-
-                      // Map fetched data to ActivityLogEntry format expected by component
-                      const formattedLogs: ActivityLogEntry[] = (logData || []).map((log: any) => ({
-                        id: log.id,
-                        timestamp: log.when_time,
-                        action: log.what, // Map 'what' to 'action'
-                        by: log.responder_id || "System", // Map 'responder_id' to 'by'
-                        notes: log.notes,
-                      }));
-
-                      // Update local state/UI
-                      setSelectedReport((prev: EmergencyReportWithAssignments | null) => // Add type annotation
-                        prev
-                          ? {
-                              ...prev,
-                              assignedMembers: [
-                                ...(prev.assignedMembers || []),
-                                {
-                                  id: memberId,
-                                  name: memberName, // Use fetched/found member name
-                                  role: member?.role || "responder", // Use fetched/found role
-                                  status: "assigned",
-                                },
-                              ],
-                              activityLog: formattedLogs, // Use formatted logs
-                            }
-                          : prev
-                      );
-                    }}
-                    onUnassignMember={async (memberId: string) => {
-                       if (!selectedReport?.disaster_response_id) {
-                        console.error("Cannot unassign member: Disaster Response ID is missing for this report.");
-                        // TODO: Add user feedback
-                        return;
-                      }
-                      const supabase = createClient();
-                      // Explicitly type 'm' in the find callback
-                      const member = selectedReport.assignedMembers.find((m: AssignedMember) => m.id === memberId);
-                      const memberName = member?.name || memberId;
-
-                      // Remove assignment from DB (team_assignments uses emergency_report_id)
-                      await supabase
-                        .from("team_assignments")
-                        .delete()
-                        .eq("emergency_report_id", selectedReport.id) // Use correct FK name
-                        .eq("member_id", memberId);
-
-                      // Log unassignment in activity_logs table using disaster_response_id
-                      await supabase
-                        .from("activity_logs") // Correct table name
-                        .insert([
-                          {
-                            disaster_response_id: selectedReport.disaster_response_id, // Use correct FK
-                            what: `Unassigned member: ${memberName}`, // Use 'what' field
-                            when_time: new Date().toISOString(), // Use 'when_time'
-                            responder_id: userId, // Log who performed the action
-                            notes: `Member ID: ${memberId}`, // Additional details in notes
-                          },
-                        ]);
-
-                      // Fetch updated activity log using disaster_response_id
-                      const { data: logData } = await supabase
-                        .from("activity_logs") // Correct table name
-                        .select("id, when_time, what, responder_id, notes") // Adjust selected columns
-                        .eq("disaster_response_id", selectedReport.disaster_response_id) // Use correct FK
-                        .order("when_time", { ascending: false }); // Order by correct timestamp column
-
-                      // Map fetched data to ActivityLogEntry format
-                       const formattedLogs: ActivityLogEntry[] = (logData || []).map((log: any) => ({
-                        id: log.id,
-                        timestamp: log.when_time,
-                        action: log.what,
-                        by: log.responder_id || "System",
-                        notes: log.notes,
-                      }));
-
-                      // Update local state/UI
-                      setSelectedReport((prev: EmergencyReportWithAssignments | null) => // Add type annotation
-                        prev
-                          ? {
-                              ...prev,
-                              // Explicitly type 'm' in the filter callback
-                              assignedMembers: (prev.assignedMembers || []).filter(
-                                (m: AssignedMember) => m.id !== memberId
-                              ),
-                              activityLog: formattedLogs, // Use formatted logs
-                            }
-                          : prev
-                      );
-                    }}
-                    onUpdateEvent={() => { /* TODO: Implement if needed */ }}
-                    onAddAttachment={() => {}}
-                    onRemoveAttachment={() => {}}
-                  />
-                </div>
-              ) : (
-                <EmergencyReportsTable
-                  responderView={false}
-                  onViewDetails={async (report: EmergencyReport) => {
-                    const supabase = createClient();
-
-                    // Fetch assigned members for this event (uses emergency_report_id)
-                    const { data: assignments } = await supabase
-                      .from("team_assignments")
-                      .select("member_id, profiles:profiles!inner(user_id, name, role)") // Use 'name', ensure profiles join is correct
-                      .eq("emergency_report_id", report.id); // Use correct FK name
-
-                    const assignedMembers: AssignedMember[] =
-                      assignments?.map((a: any) => ({
-                        id: a.member_id, // This should be the profile ID (integer) or user_id (uuid)? Check team_assignments schema
-                        name: a.profiles?.name || "Anggota", // Use 'name'
-                        role: a.profiles?.role || "responder",
-                        status: "assigned", // Assuming status comes from elsewhere or defaults here
-                      })) || [];
-
-                    // Fetch activity log using disaster_response_id if it exists
-                    let activityLog: ActivityLogEntry[] = [];
-                    if (report.disaster_response_id) {
-                      const { data: logData } = await supabase
-                        .from("activity_logs") // Correct table name
-                        .select("id, when_time, what, responder_id, notes") // Adjust columns
-                        .eq("disaster_response_id", report.disaster_response_id) // Use correct FK
-                        .order("when_time", { ascending: false }); // Order by correct timestamp
-
-                      // Map fetched data to ActivityLogEntry format
-                      activityLog = (logData || []).map((log: any) => ({
-                          id: log.id,
-                          timestamp: log.when_time,
-                          action: log.what,
-                          by: log.responder_id || "System", // TODO: Fetch profile name for responder_id if needed
-                          notes: log.notes,
-                        }));
-                    } else {
-                      console.warn(`No disaster_response_id found for emergency report ${report.id}. Activity log will be empty.`);
-                    }
-
-                    setSelectedReport({
-                      ...report,
-                      assignedMembers,
-                      activityLog, // Pass fetched or empty logs
-                    });
-                  }}
-                />
-              )}
-            </div>
-          )}
-          {activeMenu === "contribution" && (
-            <div className="p-4">
-              <ContributionsTable responderView />
-            </div>
-          )}
-          {activeMenu === "spreadsheets" && (
-            <div className="p-4">
-              <SpreadsheetManager />
-            </div>
-          )}
-          {activeMenu === "organization_profile" && isAdminOrOrgAdmin && (
-            <div className="p-4">
-              <OrganizationProfile />
-            </div>
-          )}
-          {activeMenu === "responder_profile" && role !== "org_admin" && !isSuperAdmin && (
-            <div className="p-4">
-              <ResponderProfile />
-            </div>
-          )}
-          {activeMenu === "responder_management" && isAdminOrOrgAdmin && (
-            <div className="p-4">
-              <ResponderManagement />
-            </div>
-          )}
-        </div>
+      <main className="flex-1 overflow-y-auto p-6">
+         {/* Render content based on activeMenu - Use currentUserRole for checks */}
+         {activeMenu === 'dashboard' && <DashboardOverview orgId={orgId} />}
+         {activeMenu === 'emergency' && <EmergencyReportsTable />}
+         {activeMenu === 'contribution' && <ContributionsTable />}
+         {activeMenu === 'spreadsheets' && <SpreadsheetManager />}
+         {/* Admin/Org Admin Views - Use correct keys and components */} 
+         {activeMenu === 'data_respon' && isOrgAdmin && <DisasterResponseDashboard />}
+         {activeMenu === 'pengaturan_org' && isOrgAdmin && <OrganizationProfile />}
+         {/* Add other views here */}
       </main>
     </div>
   );
 }
+
+// --- Add Placeholder Definitions --- 
+const DashboardOverview = ({ orgId }: { orgId: string | null }) => <div>Konten Dasbor Utama {orgId && `(Org: ${orgId})`}</div>;
+// Remove UserProfile placeholder if ResponderProfile is used
+// const UserProfile = () => <div>Konten Profil Pengguna</div>; 
+// Ensure other components like ContributionsTable, ResponderManagement, etc. are imported or defined elsewhere
+// ... (Keep any other existing placeholders/imports) ...

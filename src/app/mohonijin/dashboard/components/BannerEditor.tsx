@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
-import { createClient } from '@/../lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
+import React, { useState, useEffect, useCallback } from 'react';
+import { toast } from 'react-hot-toast';
+import dynamic from 'next/dynamic';
 
 export default function BannerEditor() {
   const supabase = createClient();

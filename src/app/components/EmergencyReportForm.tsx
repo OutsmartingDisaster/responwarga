@@ -113,48 +113,43 @@ export default function EmergencyReportForm({ onClose, onSuccess }: EmergencyRep
     setError(null);
 
     try {
-      // Upload photo if exists
-      let photoUrl = null;
+      let photoPublicUrl: string | null = null;
       if (photo) {
-        const fileName = `emergency_reports/${Date.now()}_${photo.name}`;
+        const fileName = `${Date.now()}_${photo.name}`;
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('emergency-photos')
           .upload(fileName, photo);
 
-        if (uploadError) {
-          throw new Error(`Error uploading photo: ${uploadError.message}`);
-        }
+        if (uploadError) throw uploadError;
 
-        // Use the proper URL construction
-        if (supabaseUrl) {
-          const storageUrl = new URL(`storage/v1/object/public/emergency-photos/${fileName}`, supabaseUrl).href;
-          photoUrl = storageUrl;
-        }
+        const { data: urlData } = supabase.storage
+          .from('emergency-photos')
+          .getPublicUrl(fileName);
+        
+        photoPublicUrl = urlData?.publicUrl || null;
+        console.log('Uploaded photo public URL:', photoPublicUrl);
       }
 
-      // Save report to database
-      const { data, error: insertError } = await supabase
+      const reportData = {
+        full_name: formData.fullName,
+        phone_number: formData.phoneNumber,
+        email: formData.email,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        address: formData.address || 'Alamat tidak spesifik',
+        description: formData.description,
+        assistance_type: formData.assistanceType,
+        photo_url: photoPublicUrl,
+        status: 'pending'
+      };
+
+      const { data, error } = await supabase
         .from('emergency_reports')
-        .insert([
-          {
-            full_name: formData.fullName,
-            phone_number: formData.phoneNumber,
-            email: formData.email,
-            address: formData.address,
-            description: formData.description,
-            assistance_type: formData.assistanceType,
-            latitude: location.latitude,
-            longitude: location.longitude,
-            photo_url: photoUrl,
-            status: 'menunggu',
-          },
-        ])
+        .insert([reportData])
         .select();
 
-      if (insertError) {
-        throw new Error(`Error saving report: ${insertError.message}`);
-      }
-
+      if (error) throw error;
+      
       setSuccess(true);
       onSuccess(location.latitude, location.longitude);
       

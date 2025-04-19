@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, KeyboardEvent } from "react";
-import { createClient } from "@/../lib/supabase/client";
+import { createClient } from "@/lib/supabase/client";
 import ResponderCheckinTable from "./ResponderCheckinTable";
 import InventoryLogTable from "./InventoryLogTable";
 import ActivityLogTable from "./ActivityLogTable";

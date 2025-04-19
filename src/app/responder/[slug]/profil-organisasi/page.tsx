@@ -1,3 +1,6 @@
 "use client";
-import OrganizationProfile from "../../../dashboard/OrganizationProfile";
+
+import React from 'react';
+import OrganizationProfile from '../../dashboard/OrganizationProfile';
+
 export default OrganizationProfile;

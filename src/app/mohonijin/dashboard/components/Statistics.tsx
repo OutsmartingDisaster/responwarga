@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -45,6 +45,7 @@ interface Contribution {
 }
 
 export default function Statistics() {
+  const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalEmergencies: 0,
