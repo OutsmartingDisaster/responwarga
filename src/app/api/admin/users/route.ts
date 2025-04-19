@@ -6,15 +6,25 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // Helper function to check admin status
 async function isAdmin(supabase: any): Promise<boolean> {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) return false;
+    if (userError || !user) {
+        console.error('isAdmin: Failed to get user data:', userError?.message || 'No user found');
+        return false;
+    }
 
+    console.log('isAdmin: User ID:', user.id);
     const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('user_id', user.id)
         .single();
 
-    return !profileError && profile?.role === 'admin';
+    if (profileError) {
+        console.error('isAdmin: Failed to fetch profile for user ID', user.id, ':', profileError.message);
+        return false;
+    }
+
+    console.log('isAdmin: Profile role for user ID', user.id, ':', profile?.role);
+    return profile?.role === 'admin';
 }
 
 // --- GET Handler (Fetch All Users) ---

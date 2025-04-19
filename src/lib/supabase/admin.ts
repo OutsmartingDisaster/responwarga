@@ -1,4 +1,4 @@
-JSON.parse: unexpected end of data at line 1 column 1 of the JSON dataimport { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Ensure these environment variables are set in your deployment environment
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
