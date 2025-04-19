@@ -8,6 +8,9 @@
     "start": "next start",
     "lint": "next lint"
   },
+  "engines": {
+    "node": "^20.9.0"
+  },
   "dependencies": {
     "@handsontable/react": "^15.1.0",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
