@@ -9,6 +9,9 @@ const withPWA = require('next-pwa')({
 const nextConfig = withPWA({
   reactStrictMode: true,
   transpilePackages: ['leaflet', 'react-leaflet'],
+  images: {
+    unoptimized: true,
+  },
   webpack: (config) => {
     return config; // Optional: Remove if no custom webpack changes are needed
   },
