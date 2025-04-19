@@ -41,3 +41,4 @@ yarn-error.log*
 next-env.d.ts
 
 ssh_tools.jsonc
+temp_cline_mcp_settings.json
