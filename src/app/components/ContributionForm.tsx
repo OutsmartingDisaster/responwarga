@@ -215,9 +215,9 @@ const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess 
         latitude: location.lat,
         longitude: location.lng,
         photo_url: photoPublicUrl,
-        status: 'pending_review',
+        status: 'menunggu',
         show_contact_info: formData.showContactOnMap,
-        consent_statement: formData.agreeToTerms,
+        consent_statement: formData.agreeToTerms ? 'Saya setuju' : 'Tidak setuju',
       };
 
       const { data, error } = await supabase
