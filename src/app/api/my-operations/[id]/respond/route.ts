@@ -5,15 +5,14 @@ import { getSessionFromCookies } from '@/lib/auth/session';
 // POST /api/my-operations/[id]/respond - Accept or decline operation invitation
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: operationId } = await params;
   try {
     const user = await getSessionFromCookies(request.cookies);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    const operationId = params.id;
     const { accept } = await request.json();
 
     // Find the team member record

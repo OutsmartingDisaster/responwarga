@@ -267,7 +267,7 @@ export const createApiClient = (): ApiClient => {
                 }
             },
             signOut: async () => {
-                await fetch('/api/auth/signout', { method: 'POST', cache: 'no-store' });
+                await fetch('/api/auth/logout', { method: 'POST', cache: 'no-store' });
                 return { error: null };
             },
             onAuthStateChange: () => {

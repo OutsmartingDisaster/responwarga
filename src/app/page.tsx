@@ -244,17 +244,21 @@ export default function Home() {
               )}
             </div>
             <p className="mt-6 text-zinc-700 leading-relaxed">
-              “Fitur utama Respon Warga masih dalam tahap ujicoba, kami belum membuka permintaan dan kontribusi bantuan karena kami tidak ingin sekedar menghimpun data.
-
-              Apabila kamu ingin berkontribusi, Kami sedang mengaktifkan insiatif data crowdsourcing untuk Banjir Sumatra yang bisa diklik di sini.”
+              Kami tidak ingin memberikan harapan palsu karena kami belum berpartner dengan tim respons.
+              <br className="hidden sm:block" />
+              <br className="sm:hidden" />
+              Fitur utama Respon Warga masih dalam tahap ujicoba, kami belum membuka permintaan dan kontribusi bantuan karena kami tidak ingin sekedar menghimpun data.
+              <br className="hidden sm:block" />
+              <br className="sm:hidden" />
+              Namun kami sedang mengaktifkan inisiatif data crowdsourcing untuk penelitian dan analisis dampak Banjir Sumatra yang bertujuan untuk mengimpun bahan pembelajaran kolektif.{" "}
             </p>
             {!isSuperAdmin && (
               <p className="mt-4 text-sm text-zinc-500">
-                Pengumuman ini hanya dapat ditutup oleh tim inti Respon Warga (super admin).
+                Kalau kamu ingin berkontribusi, kamu bisa langsung klik link dibawah.
               </p>
             )}
             <a
-              href="https://responwarga.uinspire.id/crowdsourcing/a283c2b9-2966-4ce9-97eb-b96201b968ab/"
+              href="https://responwarga.uinspire.id/crowdsourcing/8dba1412-fad2-4eba-881e-577c0422239d"
               target="_blank"
               rel="noreferrer"
               className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-white font-medium shadow-lg hover:bg-blue-500 transition"

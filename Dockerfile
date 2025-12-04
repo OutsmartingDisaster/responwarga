@@ -7,6 +7,8 @@ COPY package*.json ./
 RUN npm ci
 
 FROM base AS builder
+ARG DATABASE_URL
+ENV DATABASE_URL=${DATABASE_URL}
 COPY . .
 RUN npm run build
 

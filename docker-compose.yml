@@ -34,6 +34,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        DATABASE_URL: postgres://${DB_USER:-responwarga}:${DB_PASSWORD:-responwarga}@db:5432/${DB_NAME:-responwarga}
     restart: unless-stopped
     env_file:
       - .env.local

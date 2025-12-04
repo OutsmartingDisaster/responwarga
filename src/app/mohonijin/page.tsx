@@ -68,8 +68,9 @@ export default function AdminLogin() {
 
       const result = await response.json();
 
-      // Check if user is an admin
-      if (result.data?.user?.role === 'admin') {
+      // Check if user is an admin or super_admin
+      const role = result.data?.user?.role;
+      if (role === 'admin' || role === 'super_admin') {
         router.push('/mohonijin/dashboard');
       } else {
         setError('Access Denied: You do not have permission to access this area.');

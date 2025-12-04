@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db/pool';
-import { isWithinGeofence } from '@/lib/crowdsourcing/geofence';
+import { isWithinGeofence, isWithinZones, GeofenceZone } from '@/lib/crowdsourcing/geofence';
 import { checkRateLimit, getRateLimitKey, RATE_LIMITS } from '@/lib/crowdsourcing/ratelimit';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
@@ -92,9 +92,24 @@ export async function POST(
       }, { status: 400 });
     }
 
-    // Validate geofence
+    // Validate geofence - check zones first, then fallback to project-level geofence
     if (project.require_location) {
-      const geofenceCheck = isWithinGeofence(latitude, longitude, project);
+      // Get geofence zones for this project
+      const { rows: zones } = await query(
+        'SELECT zone_name, zone_level, latitude, longitude, radius_km FROM crowdsource_geofence_zones WHERE project_id = $1 AND is_active = true ORDER BY display_order',
+        [projectId]
+      );
+
+      let geofenceCheck: { valid: boolean; message?: string };
+      
+      if (zones.length > 0) {
+        // Use zone-based validation (province/kabupaten/etc)
+        geofenceCheck = isWithinZones(latitude, longitude, zones as GeofenceZone[]);
+      } else {
+        // Fallback to project-level radius validation
+        geofenceCheck = isWithinGeofence(latitude, longitude, project);
+      }
+
       if (!geofenceCheck.valid) {
         return NextResponse.json({ error: geofenceCheck.message }, { status: 400 });
       }
