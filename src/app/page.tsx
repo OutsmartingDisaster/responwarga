@@ -25,12 +25,23 @@ const Map = dynamic(() => import('./components/Map'), {
   ),
 });
 
+interface ModalSettings {
+  enabled: boolean;
+  title: string;
+  subtitle: string;
+  content: string;
+  cta_text: string;
+  cta_url: string;
+  public_note: string;
+}
+
 export default function Home() {
   const [showEmergencyForm, setShowEmergencyForm] = useState(false);
   const [showContributionForm, setShowContributionForm] = useState(false);
   const [showUserPolicyModal, setShowUserPolicyModal] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
-  const [showAnnouncementModal, setShowAnnouncementModal] = useState(true);
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+  const [modalSettings, setModalSettings] = useState<ModalSettings | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [mapCenter, setMapCenter] = useState<[number, number]>([-6.2088, 106.8456]);
   const [filterType, setFilterType] = useState<FilterType>('all');
@@ -43,6 +54,21 @@ export default function Home() {
       setIsSuperAdmin(user?.role === 'super_admin');
     };
     hydrateSession();
+
+    // Fetch modal settings
+    const fetchModalSettings = async () => {
+      try {
+        const res = await fetch('/api/settings/homepage_modal');
+        if (res.ok) {
+          const { data } = await res.json();
+          setModalSettings(data);
+          setShowAnnouncementModal(data?.enabled ?? false);
+        }
+      } catch (error) {
+        console.error('Error fetching modal settings:', error);
+      }
+    };
+    fetchModalSettings();
   }, []);
 
   // State for fetched emergency reports
@@ -213,7 +239,7 @@ export default function Home() {
       </div>
 
       {/* Forms and Modals */}
-      {showAnnouncementModal && (
+      {showAnnouncementModal && modalSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
             className="absolute inset-0 bg-zinc-900/80 backdrop-blur-sm"
@@ -227,10 +253,10 @@ export default function Home() {
             <div className="flex justify-between items-start gap-4">
               <div>
                 <p className="uppercase text-xs tracking-[0.3em] text-red-500 font-semibold">
-                  Pengumuman Publik
+                  {modalSettings.subtitle}
                 </p>
                 <h2 className="mt-3 text-2xl font-heading text-zinc-900">
-                  Fitur Respon Warga masih tahap uji coba
+                  {modalSettings.title}
                 </h2>
               </div>
               {isSuperAdmin && (
@@ -243,29 +269,25 @@ export default function Home() {
                 </button>
               )}
             </div>
-            <p className="mt-6 text-zinc-700 leading-relaxed">
-              Kami tidak ingin memberikan harapan palsu karena kami belum berpartner dengan tim respons.
-              <br className="hidden sm:block" />
-              <br className="sm:hidden" />
-              Fitur utama Respon Warga masih dalam tahap ujicoba, kami belum membuka permintaan dan kontribusi bantuan karena kami tidak ingin sekedar menghimpun data.
-              <br className="hidden sm:block" />
-              <br className="sm:hidden" />
-              Namun kami sedang mengaktifkan inisiatif data crowdsourcing untuk penelitian dan analisis dampak Banjir Sumatra yang bertujuan untuk mengimpun bahan pembelajaran kolektif.{" "}
+            <p className="mt-6 text-zinc-700 leading-relaxed whitespace-pre-line">
+              {modalSettings.content}
             </p>
-            {!isSuperAdmin && (
+            {!isSuperAdmin && modalSettings.public_note && (
               <p className="mt-4 text-sm text-zinc-500">
-                Kalau kamu ingin berkontribusi, kamu bisa langsung klik link dibawah.
+                {modalSettings.public_note}
               </p>
             )}
-            <a
-              href="https://responwarga.uinspire.id/crowdsourcing/8dba1412-fad2-4eba-881e-577c0422239d"
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-white font-medium shadow-lg hover:bg-blue-500 transition"
-            >
-              Buka Inisiatif Banjir Sumatra
-              <span aria-hidden>↗</span>
-            </a>
+            {modalSettings.cta_url && modalSettings.cta_text && (
+              <a
+                href={modalSettings.cta_url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-white font-medium shadow-lg hover:bg-blue-500 transition"
+              >
+                {modalSettings.cta_text}
+                <span aria-hidden>↗</span>
+              </a>
+            )}
           </div>
         </div>
       )}

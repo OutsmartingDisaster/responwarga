@@ -14,8 +14,9 @@ import UserPolicyEditor from './components/UserPolicyEditor';
 import SpreadsheetManager from './components/SpreadsheetManager';
 import OrganizationManager from './components/OrganizationManager';
 import CrowdsourcingManager from './components/CrowdsourcingManager';
+import HomepageModalEditor from './components/HomepageModalEditor';
 
-type ActiveTab = 'dashboard' | 'emergency' | 'contribution' | 'crowdsourcing' | 'spreadsheet' | 'users' | 'organizations' | 'content' | 'banner' | 'about' | 'policy';
+type ActiveTab = 'dashboard' | 'emergency' | 'contribution' | 'crowdsourcing' | 'spreadsheet' | 'users' | 'organizations' | 'content' | 'banner' | 'about' | 'policy' | 'homepage_modal';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -115,7 +116,8 @@ export default function AdminDashboard() {
                 { id: 'content', label: 'Content', icon: 'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z' },
                 { id: 'banner', label: 'Banner', icon: 'M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z' },
                 { id: 'about', label: 'About', icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
-                { id: 'policy', label: 'User Policy', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' }
+                { id: 'policy', label: 'User Policy', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+                { id: 'homepage_modal', label: 'Lock Website', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' }
               ] as Array<{ id: ActiveTab; label: string; icon: string }>
             ).map((item) => (
               <button
@@ -171,6 +173,7 @@ export default function AdminDashboard() {
         {activeTab === 'banner' && <BannerEditor />}
         {activeTab === 'about' && <AboutEditor />}
         {activeTab === 'policy' && <UserPolicyEditor />}
+        {activeTab === 'homepage_modal' && <HomepageModalEditor />}
           </div>
       </main>
       </div>
