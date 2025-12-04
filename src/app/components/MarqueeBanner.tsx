@@ -1,56 +1,59 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import Marquee from "react-fast-marquee";
 
 export default function MarqueeBanner() {
-  const supabase = createClient();
   const [banners, setBanners] = useState<any[]>([]);
   const [showBanner, setShowBanner] = useState(true);
 
   useEffect(() => {
     fetchActiveBanners();
-
-    // Subscribe to changes in the banners table
-    const channel = supabase
-      .channel('banner-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'banners'
-        },
-        () => {
-          fetchActiveBanners();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // Real-time subscription removed as we migrated to REST API
+    // We could implement polling here if needed
   }, []);
 
   const fetchActiveBanners = async () => {
-    const { data: bannerSettings, error: settingsError } = await supabase
-      .from('banner_settings')
-      .select('is_enabled')
-      .single();
+    try {
+      // Fetch banner settings
+      const settingsResponse = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'select',
+          table: 'banner_settings',
+          columns: 'is_enabled',
+          single: true
+        })
+      });
 
-    if (!settingsError) {
-      setShowBanner(bannerSettings?.is_enabled ?? true);
-    }
+      const settingsResult = await settingsResponse.json();
+      if (!settingsResponse.ok) {
+        // If error (e.g. table doesn't exist or empty), default to true
+        console.warn('Failed to fetch banner settings:', settingsResult.error);
+      } else {
+        setShowBanner(settingsResult.data?.is_enabled ?? true);
+      }
 
-    const { data, error } = await supabase
-      .from('banners')
-      .select('*')
-      .eq('active', true)
-      .order('created_at', { ascending: false });
+      // Fetch active banners
+      const bannersResponse = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'select',
+          table: 'banners',
+          filters: [{ column: 'active', operator: 'eq', value: true }],
+          order: [{ column: 'created_at', ascending: false }]
+        })
+      });
 
-    if (!error && data) {
-      setBanners(data);
+      const bannersResult = await bannersResponse.json();
+      if (!bannersResponse.ok) {
+        console.warn('Failed to fetch banners:', bannersResult.error);
+      } else if (bannersResult.data) {
+        setBanners(bannersResult.data);
+      }
+    } catch (err) {
+      console.error('Error fetching banners:', err);
     }
   };
 
@@ -63,14 +66,14 @@ export default function MarqueeBanner() {
   const animationDuration = `${baseSpeed * speedMultiplier}s`;
 
   return (
-    <div 
+    <div
       className="bg-[#EF4444] text-white overflow-hidden py-1.5 relative font-space-grotesk"
       style={{ fontFamily: 'Space Grotesk, sans-serif' }}
     >
       <div className="overflow-hidden relative">
-        <div 
+        <div
           className="whitespace-nowrap inline-block animate-marquee"
-          style={{ 
+          style={{
             animation: `marquee ${animationDuration} linear infinite`,
             willChange: 'transform',
             transform: 'translateX(100%)'

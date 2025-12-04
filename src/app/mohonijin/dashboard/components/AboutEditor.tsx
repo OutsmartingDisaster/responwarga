@@ -1,10 +1,10 @@
-import { createClient } from '@/lib/supabase/client';
+import { createApiClient } from '@/lib/api-client';
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 
 export default function AboutEditor() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [contents, setContents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -22,7 +22,7 @@ export default function AboutEditor() {
       setLoading(true);
       setError(null);
       
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('about_content')
         .select('*')
         .order('created_at', { ascending: false });
@@ -51,7 +51,7 @@ export default function AboutEditor() {
       setError(null);
       setSuccess(null);
       
-      const { error } = await supabase
+      const { error } = await api
         .from('about_content')
         .update({
           content: editHtml,
@@ -81,7 +81,7 @@ export default function AboutEditor() {
       setError(null);
       setSuccess(null);
       
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('about_content')
         .insert({
           content: '<h2>About Respon Warga</h2><p>Edit this content.</p>',
@@ -91,7 +91,7 @@ export default function AboutEditor() {
         .single();
         
       if (error) {
-        console.error('Supabase error:', error);
+        console.error('Database error:', error);
         throw new Error(error.message);
       }
 
@@ -112,7 +112,7 @@ export default function AboutEditor() {
 
   const toggleContentStatus = async (id: string, currentStatus: boolean) => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('about_content')
         .update({ active: !currentStatus })
         .eq('id', id);
@@ -130,7 +130,7 @@ export default function AboutEditor() {
     if (!confirm('Are you sure you want to delete this content?')) return;
     
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('about_content')
         .delete()
         .eq('id', id);

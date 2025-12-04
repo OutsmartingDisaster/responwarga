@@ -1,10 +1,10 @@
 "use client";
 import React, { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createApiClient } from "@/lib/api-client";
 import { toast } from 'react-hot-toast';
 
 export default function DeliveryLogTable({ dailyLogId }: { dailyLogId: string }) {
-  const supabase = createClient();
+  const api = createApiClient();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,10 +27,10 @@ export default function DeliveryLogTable({ dailyLogId }: { dailyLogId: string })
     setLoading(true);
     setError(null);
     try {
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("Pengguna tidak terautentikasi");
       setUserId(user.id);
-      const { data, error: logsError } = await supabase
+      const { data, error: logsError } = await api
         .from("delivery_logs")
         .select("*, profiles!delivered_by(name)")
         .eq("daily_log_id", dailyLogId)
@@ -75,7 +75,7 @@ export default function DeliveryLogTable({ dailyLogId }: { dailyLogId: string })
     try {
       if (editingId) {
         // Update
-        const { error: updateError } = await supabase
+        const { error: updateError } = await api
           .from("delivery_logs")
           .update({
             item_name: form.item_name,
@@ -87,7 +87,7 @@ export default function DeliveryLogTable({ dailyLogId }: { dailyLogId: string })
         if (updateError) throw updateError;
       } else {
         // Insert
-        const { error: insertError } = await supabase
+        const { error: insertError } = await api
           .from("delivery_logs")
           .insert([
             {

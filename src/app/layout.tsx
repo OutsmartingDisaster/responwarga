@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { SupabaseClientProvider } from "../contexts/SupabaseClientProvider";
+
 import { Toaster } from 'react-hot-toast';
 
 const inter = Inter({ subsets: ["latin"] });
@@ -17,13 +17,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <SupabaseClientProvider>
-          {children}
-          <Toaster position="bottom-right" />
-        </SupabaseClientProvider>
+        {children}
+        <Toaster position="bottom-right" />
       </body>
     </html>
   );
-}
+} 

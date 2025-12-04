@@ -110,7 +110,7 @@ npm run dev
 yarn dev
 ```
 
-Buka `http://localhost:3000` dengan *browser* Anda. Anda mungkin perlu menavigasi ke `/masuk` untuk *login* atau `/daftar` untuk mendaftarkan organisasi/pengguna tergantung pada alur yang diterapkan.
+Buka `http://localhost:3535` dengan *browser* Anda. Anda mungkin perlu menavigasi ke `/masuk` untuk *login* atau `/daftar` untuk mendaftarkan organisasi/pengguna tergantung pada alur yang diterapkan.
 
 ## Struktur Database
 
@@ -150,9 +150,11 @@ Proyek *Supabase* Anda sudah di-*deploy* di *cloud*. Pastikan untuk:
 
 ## Berkontribusi
 
-Kontribusi sangat diterima! 
+Kontribusi sangat diterima! Baca `AGENTS.md` untuk pedoman kontributor internal. 
 Silakan kirim *Pull Request* ke repositori [*OutsmartingDisaster/respon-warga*](https://github.com/OutsmartingDisaster/respon-warga).
 
 ## Lisensi
 
 Proyek ini dilisensikan di bawah *MIT License* - lihat file LICENSE untuk detailnya.
+
+

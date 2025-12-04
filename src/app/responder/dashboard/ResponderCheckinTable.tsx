@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createApiClient } from "@/lib/api-client";
 
 export default function ResponderCheckinTable({ dailyLogId }: { dailyLogId: string }) {
-  const supabase = createClient();
+  const api = createApiClient();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export default function ResponderCheckinTable({ dailyLogId }: { dailyLogId: stri
     setLoading(true);
     setError(null);
     try {
-      const { data, error: logsError } = await supabase
+      const { data, error: logsError } = await api
         .from("responder_logs")
         .select("*, profiles!responder_id(name)")
         .eq("daily_log_id", dailyLogId)
@@ -37,13 +37,13 @@ export default function ResponderCheckinTable({ dailyLogId }: { dailyLogId: stri
     setCheckingIn(true);
     setError(null);
     try {
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("Pengguna tidak terautentikasi");
       // Check if already checked in
       const already = logs.find((l) => l.responder_id === user.id && l.check_in_time && !l.check_out_time);
       if (already) throw new Error("Sudah check-in dan belum check-out.");
       const now = new Date().toISOString();
-      const { error: insertError } = await supabase
+      const { error: insertError } = await api
         .from("responder_logs")
         .insert([
           {
@@ -66,13 +66,13 @@ export default function ResponderCheckinTable({ dailyLogId }: { dailyLogId: stri
     setCheckingOut(true);
     setError(null);
     try {
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("Pengguna tidak terautentikasi");
       // Find today's log for this user
       const log = logs.find((l) => l.responder_id === user.id && l.check_in_time && !l.check_out_time);
       if (!log) throw new Error("Tidak ditemukan check-in aktif.");
       const now = new Date().toISOString();
-      const { error: updateError } = await supabase
+      const { error: updateError } = await api
         .from("responder_logs")
         .update({
           check_out_time: now,

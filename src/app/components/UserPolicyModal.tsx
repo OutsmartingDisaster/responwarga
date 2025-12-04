@@ -1,14 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
 
 interface UserPolicyModalProps {
   onClose: () => void;
 }
 
 export default function UserPolicyModal({ onClose }: UserPolicyModalProps) {
-  const supabase = createClient();
   const [policyContent, setPolicyContent] = useState<string>('Memuat kebijakan pengguna...');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,20 +41,30 @@ export default function UserPolicyModal({ onClose }: UserPolicyModalProps) {
   const fetchUserPolicy = async () => {
     try {
       setLoading(true);
-      
-      // Fetch the latest user policy from Supabase
-      const { data, error } = await supabase
-        .from('user_policies')
-        .select('content')
-        .order('created_at', { ascending: false })
-        .limit(1);
 
-      if (error) {
-        throw error;
+      // Fetch the latest user policy using the data API
+      const response = await fetch('/api/data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'select',
+          table: 'user_policies',
+          columns: 'content',
+          order: [{ column: 'created_at', ascending: false }],
+          limit: 1
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to fetch user policy');
       }
 
-      if (data && data.length > 0) {
-        setPolicyContent(data[0].content);
+      if (result.data && result.data.length > 0) {
+        setPolicyContent(result.data[0].content);
       } else {
         setPolicyContent('Kebijakan pengguna belum tersedia.');
       }

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createApiClient } from '@/lib/api-client';
 import { toast } from 'react-hot-toast';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 interface EmergencyReport {
   id: number;
@@ -49,12 +50,12 @@ interface CancellationModalProps {
 }
 
 // RE-INSERT Cancellation Modal Component Definition
-const CancellationModal: React.FC<CancellationModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSubmit, 
-  reason, 
-  setReason 
+const CancellationModal: React.FC<CancellationModalProps> = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  reason,
+  setReason
 }) => {
   if (!isOpen) return null;
 
@@ -70,14 +71,14 @@ const CancellationModal: React.FC<CancellationModalProps> = ({
           rows={4}
         />
         <div className="flex justify-end gap-3">
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="px-4 py-2 rounded bg-zinc-600 hover:bg-zinc-500 text-white transition-colors"
           >
             Cancel
           </button>
-          <button 
-            onClick={onSubmit} 
+          <button
+            onClick={onSubmit}
             className="px-4 py-2 rounded bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50"
             disabled={!reason.trim()} // Disable if reason is empty
           >
@@ -98,7 +99,7 @@ interface AssignmentModalProps {
   setSelectedResponder: (id: string) => void;
 }
 
-const AssignmentModal: React.FC<AssignmentModalProps> = ({ 
+const AssignmentModal: React.FC<AssignmentModalProps> = ({
   isOpen, onClose, onSubmit, responders, selectedResponder, setSelectedResponder
 }) => {
   if (!isOpen) return null;
@@ -109,7 +110,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = ({
         {responders.length === 0 ? (
           <p className="text-zinc-400">No available responders found for your organization.</p>
         ) : (
-          <select 
+          <select
             value={selectedResponder}
             onChange={(e) => setSelectedResponder(e.target.value)}
             className="w-full p-2 rounded bg-zinc-700 border border-zinc-600 text-white mb-4"
@@ -122,7 +123,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = ({
         )}
         <div className="flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 rounded bg-zinc-600 hover:bg-zinc-500 text-white">Cancel</button>
-          <button 
+          <button
             onClick={() => onSubmit(selectedResponder)}
             disabled={!selectedResponder || responders.length === 0}
             className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
@@ -142,13 +143,13 @@ export default function EmergencyReportsTable({
   responderView?: boolean;
   onViewDetails?: (report: EmergencyReport) => void;
 }) {
-  const supabase = createClient();
+  const api = createApiClient();
   const [reports, setReports] = useState<EmergencyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
   const [currentUser, setCurrentUser] = useState<any>(null);
-  
+
   // State for cancellation modal - RE-ADD
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [reportToCancel, setReportToCancel] = useState<EmergencyReport | null>(null);
@@ -160,6 +161,10 @@ export default function EmergencyReportsTable({
   const [availableResponders, setAvailableResponders] = useState<{ id: string; name: string }[]>([]);
   const [selectedResponderId, setSelectedResponderId] = useState('');
 
+  // State for delete confirmation modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [reportToDelete, setReportToDelete] = useState<number | null>(null);
+
   useEffect(() => {
     fetchReports();
     fetchCurrentUser();
@@ -170,9 +175,9 @@ export default function EmergencyReportsTable({
     try {
       setLoading(true);
       // Select all necessary fields
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('emergency_reports')
-        .select('*' 
+        .select('*'
           // Optionally join names if not denormalized:
           // , org_responder:organizations ( name ), responder:profiles ( full_name ) 
         )
@@ -202,7 +207,7 @@ export default function EmergencyReportsTable({
   };
 
   const fetchCurrentUser = async () => {
-    const { data } = await supabase.auth.getUser();
+    const { data } = await api.auth.getUser();
     setCurrentUser(data.user);
   };
 
@@ -211,7 +216,7 @@ export default function EmergencyReportsTable({
     responder_status: 'diterima' | 'sedang_berjalan' | 'selesai' | 'batal'
   ) => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('emergency_reports')
         .update({ responder_status })
         .eq('id', id);
@@ -230,13 +235,13 @@ export default function EmergencyReportsTable({
 
   const updateStatus = async (id: number, status: EmergencyReportStatus) => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('emergency_reports')
         .update({ status })
         .eq('id', id);
 
       if (error) throw error;
-      setReports(prev => prev.map(report => 
+      setReports(prev => prev.map(report =>
         report.id === id ? { ...report, status } : report
       ));
     } catch (err: any) {
@@ -248,7 +253,7 @@ export default function EmergencyReportsTable({
   // Function to open the cancellation modal - RE-ADD
   const openCancellationModal = (report: EmergencyReport) => {
     setReportToCancel(report);
-    setCancellationReason(''); 
+    setCancellationReason('');
     setIsCancelModalOpen(true);
   };
 
@@ -261,39 +266,39 @@ export default function EmergencyReportsTable({
   // handleCancellationSubmit uses fixed state var names
   const handleCancellationSubmit = async () => {
     if (!reportToCancel || !cancellationReason.trim()) return;
-    
+
     // Define variables needed within the function scope
     const reportId = reportToCancel.id;
     const reason = cancellationReason.trim();
 
     try {
       setLoading(true);
-      const { error: rpcError } = await supabase.rpc('request_cancellation', {
+      const { error: rpcError } = await api.rpc('request_cancellation', {
         p_report_id: reportId,
         p_reason: reason
       });
 
       if (rpcError) throw rpcError;
-      
+
       setReports(prevReports =>
         prevReports.map(report =>
           report.id === reportId
-            ? { 
-                ...report, 
-                status: 'cancellation_pending', 
-                cancellation_reason: reason,
-              } 
+            ? {
+              ...report,
+              status: 'cancellation_pending',
+              cancellation_reason: reason,
+            }
             : report
         )
       );
       closeCancellationModal();
       alert('Cancellation request submitted successfully.');
-    } catch (err: any) { 
+    } catch (err: any) {
       console.error('Error requesting cancellation via RPC:', err);
       setError(`Failed to request cancellation: ${err.message}`);
       alert(`Error requesting cancellation: ${err.message}`);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -316,15 +321,15 @@ export default function EmergencyReportsTable({
     const orgId = currentUser?.user_metadata?.org_id; // Get admin's org id
 
     if (!orgId) {
-        alert("Error: Could not determine your organization ID.");
-        return;
+      alert("Error: Could not determine your organization ID.");
+      return;
     }
 
     console.log(`Assigning report ${reportId} to responder ${responderId} in org ${orgId}`);
     // TODO: Call assign_emergency_report RPC
     try {
       setLoading(true);
-      const { error: rpcError } = await supabase.rpc('assign_emergency_report', {
+      const { error: rpcError } = await api.rpc('assign_emergency_report', {
         report_id: reportId,
         p_org_responder_id: orgId, // Admin's Org ID
         p_responder_id: responderId // Selected Responder ID
@@ -335,17 +340,18 @@ export default function EmergencyReportsTable({
       // For optimistic, we need responder/org names somehow
       const assignedResponder = availableResponders.find(r => r.id === responderId);
       // Assuming org name is in admin metadata or fetched elsewhere
-      const orgName = currentUser?.user_metadata?.org_name || 'Unknown Org'; 
+      const orgName = currentUser?.user_metadata?.org_name || 'Unknown Org';
 
-      setReports(prev => prev.map(r => 
-        r.id === reportId 
-          ? { ...r, 
-              status: 'ditugaskan', 
-              responder_id: responderId, 
-              org_responder_id: orgId,
-              responder_name: assignedResponder?.name || 'Unknown Responder',
-              org_responder_name: orgName
-            }
+      setReports(prev => prev.map(r =>
+        r.id === reportId
+          ? {
+            ...r,
+            status: 'ditugaskan',
+            responder_id: responderId,
+            org_responder_id: orgId,
+            responder_name: assignedResponder?.name || 'Unknown Responder',
+            org_responder_name: orgName
+          }
           : r
       ));
 
@@ -360,19 +366,28 @@ export default function EmergencyReportsTable({
     }
   };
 
-  const deleteReport = async (id: number) => {
+  const confirmDeleteReport = async () => {
+    if (!reportToDelete) return;
+
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('emergency_reports')
         .delete()
-        .eq('id', id);
+        .eq('id', reportToDelete);
 
       if (error) throw error;
-      setReports(prev => prev.filter(report => report.id !== id));
+      setReports(prev => prev.filter(report => report.id !== reportToDelete));
+      toast.success('Report deleted successfully');
     } catch (err: any) {
       console.error('Error deleting report:', err);
       setError(err.message);
+      toast.error('Failed to delete report');
     }
+  };
+
+  const handleDeleteClick = (id: number) => {
+    setReportToDelete(id);
+    setIsDeleteModalOpen(true);
   };
 
   const toggleRow = (id: number) => {
@@ -423,10 +438,10 @@ export default function EmergencyReportsTable({
                       onClick={() => toggleRow(report.id)}
                       className="text-zinc-400 hover:text-white"
                     >
-                      <svg 
+                      <svg
                         className={`w-5 h-5 transform transition-transform ${expandedRows[report.id] ? 'rotate-90' : ''}`}
-                        fill="none" 
-                        stroke="currentColor" 
+                        fill="none"
+                        stroke="currentColor"
                         viewBox="0 0 24 24"
                       >
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
@@ -436,22 +451,21 @@ export default function EmergencyReportsTable({
                   <td className="px-4 py-3">{report.id}</td>
                   <td className="px-4 py-3">{report.full_name}</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      report.assistance_type === 'evacuation' ? 'bg-red-900/50 text-red-200' :
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${report.assistance_type === 'evacuation' ? 'bg-red-900/50 text-red-200' :
                       report.assistance_type === 'food_water' ? 'bg-blue-900/50 text-blue-200' :
-                      report.assistance_type === 'medical' ? 'bg-green-900/50 text-green-200' :
-                      'bg-yellow-900/50 text-yellow-200'
-                    }`}>
-                      {report.assistance_type.replace('_', ' ')}
+                        report.assistance_type === 'medical' ? 'bg-green-900/50 text-green-200' :
+                          'bg-yellow-900/50 text-yellow-200'
+                      }`}>
+                      {String(report.assistance_type || 'Unknown').replace('_', ' ')}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     {responderView ? (
                       // --- RESPONDER VIEW --- 
                       <>
-                        {(!report.responder_id) ? ( 
-                           // TODO: Per discussion, remove "Assign to me" button for responders
-                           <span className="text-zinc-500">Not Assigned</span> 
+                        {(!report.responder_id) ? (
+                          // TODO: Per discussion, remove "Assign to me" button for responders
+                          <span className="text-zinc-500">Not Assigned</span>
                         ) : (
                           <>
                             {/* Display "Ditugaskan ke..." message */}
@@ -462,23 +476,23 @@ export default function EmergencyReportsTable({
                               report.responder_id &&
                               report.responder_id === currentUser.id && (
                                 <div className="mt-2 flex gap-2">
-                                   {/* Diterima, Sedang Berjalan, Selesai buttons */}
-                                   {/* ... */}
+                                  {/* Diterima, Sedang Berjalan, Selesai buttons */}
+                                  {/* ... */}
                                   <button
                                     onClick={() => updateResponderStatus(report.id, 'diterima')}
-                                    /* ... className ... */
+                                  /* ... className ... */
                                   > Diterima </button>
                                   <button
                                     onClick={() => updateResponderStatus(report.id, 'sedang_berjalan')}
-                                    /* ... className ... */
+                                  /* ... className ... */
                                   > Sedang Berjalan </button>
                                   <button
                                     onClick={() => updateResponderStatus(report.id, 'selesai')}
-                                    /* ... className ... */
+                                  /* ... className ... */
                                   > Selesai </button>
                                   {/* Batal Button (Responder) -> Opens Cancel Modal */}
                                   <button
-                                    onClick={() => openCancellationModal(report)} 
+                                    onClick={() => openCancellationModal(report)}
                                     className={`px-2 py-1 rounded text-xs font-semibold bg-zinc-700 text-red-300`}
                                   >
                                     Batal
@@ -489,14 +503,14 @@ export default function EmergencyReportsTable({
                         )}
                       </>
                     ) : (
-                      // --- ADMIN VIEW --- 
+                      // --- ADMIN VIEW ---
                       <select
-                        value={report.status} // Ensure report.status matches one of the option values
+                        value={report.status || 'pending'} // Ensure valid value
                         onChange={(e) =>
                           updateStatus(report.id, e.target.value as EmergencyReportStatus)
                         }
-                        className={`p-1 rounded text-xs bg-zinc-700 border border-zinc-600 placeholder-zinc-400 text-white focus:ring-blue-500 focus:border-blue-500 ...`}
-                        // TODO: Disable based on role/permissions if needed
+                        className={`p-1 rounded text-xs bg-zinc-700 border border-zinc-600 placeholder-zinc-400 text-white focus:ring-blue-500 focus:border-blue-500`}
+                      // TODO: Disable based on role/permissions if needed
                       >
                         {/* Add all relevant status options for admin */}
                         <option value="pending">Pending</option>
@@ -513,22 +527,29 @@ export default function EmergencyReportsTable({
                   <td className="px-4 py-3">
                     {report.responder_status ? (
                       <span className="capitalize">
-                        {report.responder_status.replace('_', ' ')}
+                        {String(report.responder_status).replace('_', ' ')}
                       </span>
                     ) : (
                       <span className="text-zinc-500">-</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {new Date(report.created_at).toLocaleDateString()}
+                    {(() => {
+                      try {
+                        const date = new Date(report.created_at);
+                        return isNaN(date.getTime()) ? '-' : date.toLocaleDateString();
+                      } catch (e) {
+                        return '-';
+                      }
+                    })()}
                   </td>
                   <td className="px-4 py-3">
                     {responderView ? (
-                       // Actions are in Status column for responder
-                       <span className="text-zinc-500">-</span> 
+                      // Actions are in Status column for responder
+                      <span className="text-zinc-500">-</span>
                     ) : (
                       // --- ADMIN VIEW ACTIONS --- 
-                      <div className="flex items-center gap-3"> {/* Use items-center for vertical alignment */} 
+                      <div className="flex items-center gap-3"> {/* Use items-center for vertical alignment */}
                         {/* Details Button */}
                         <button
                           onClick={() => onViewDetails ? onViewDetails(report) : toggleRow(report.id)} // Can toggle details if no specific handler
@@ -551,31 +572,31 @@ export default function EmergencyReportsTable({
                             Tugaskan
                           </button>
                         )}
-                        
+
                         {/* Cancel Button - Show unless completed/cancelled? */}
                         {report.status !== 'completed' && report.status !== 'cancelled' && (
                           <button
-                            onClick={() => openCancellationModal(report)} 
+                            onClick={() => openCancellationModal(report)}
                             className="text-yellow-500 hover:text-yellow-400 transition-colors"
                             title="Request Cancellation"
                           >
-                             {/* Simple Icon for Cancel - replace if you have a better one */}
+                            {/* Simple Icon for Cancel - replace if you have a better one */}
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L10 8.586 7.707 6.293a1 1 0 00-1.414 1.414L8.586 10l-2.293 2.293a1 1 0 101.414 1.414L10 11.414l2.293 2.293a1 1 0 001.414-1.414L11.414 10l2.293-2.293z" clipRule="evenodd" />
                             </svg>
                           </button>
                         )}
-                        
+
                         {/* Delete Button */}
                         <button
-                          onClick={() => deleteReport(report.id)}
+                          onClick={() => handleDeleteClick(report.id)}
                           className="text-red-500 hover:text-red-400 transition-colors"
-                           title="Delete Report"
+                          title="Delete Report"
                         >
-                           {/* Simple Icon for Delete - replace if you have a better one */}
+                          {/* Simple Icon for Delete - replace if you have a better one */}
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                             <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                           </svg>
+                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
                         </button>
                       </div>
                     )}
@@ -607,17 +628,30 @@ export default function EmergencyReportsTable({
                             <h4 className="text-sm font-medium text-zinc-400">Location</h4>
                             <div className="mt-1 space-y-1">
                               <p className="text-sm">{report.address}</p>
-                              <p className="text-sm text-zinc-400">
-                                Coordinates: {report.latitude.toFixed(6)}, {report.longitude.toFixed(6)}
-                              </p>
-                              <a
-                                href={`https://www.google.com/maps?q=${report.latitude},${report.longitude}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-400 hover:text-blue-300 text-sm inline-block mt-1"
-                              >
-                                View on Google Maps
-                              </a>
+                              {(() => {
+                                const lat = report.latitude !== null && report.latitude !== undefined ? Number(report.latitude) : NaN;
+                                const lng = report.longitude !== null && report.longitude !== undefined ? Number(report.longitude) : NaN;
+                                const hasCoords = !isNaN(lat) && !isNaN(lng);
+
+                                if (hasCoords) {
+                                  return (
+                                    <>
+                                      <p className="text-sm text-zinc-400">
+                                        Coordinates: {lat.toFixed(6)}, {lng.toFixed(6)}
+                                      </p>
+                                      <a
+                                        href={`https://www.google.com/maps?q=${lat},${lng}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-400 hover:text-blue-300 text-sm inline-block mt-1"
+                                      >
+                                        View on Google Maps
+                                      </a>
+                                    </>
+                                  );
+                                }
+                                return <p className="text-sm text-zinc-400">Coordinates not available</p>;
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -626,9 +660,9 @@ export default function EmergencyReportsTable({
                             <h4 className="text-sm font-medium text-zinc-400">Emergency Details</h4>
                             <p className="mt-1 text-sm whitespace-pre-wrap">{report.description}</p>
                           </div>
-                          {report.photo_url && (
-                            <div>
-                              <h4 className="text-sm font-medium text-zinc-400">Photo</h4>
+                          <div>
+                            <h4 className="text-sm font-medium text-zinc-400">Photo</h4>
+                            {report.photo_url ? (
                               <a
                                 href={report.photo_url}
                                 target="_blank"
@@ -639,10 +673,17 @@ export default function EmergencyReportsTable({
                                   src={report.photo_url}
                                   alt="Emergency situation"
                                   className="max-w-sm rounded-lg shadow-lg"
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null; // Prevent infinite loop
+                                    e.currentTarget.src = 'https://placehold.co/300x200?text=Image+Error';
+                                    e.currentTarget.alt = 'Failed to load image';
+                                  }}
                                 />
                               </a>
-                            </div>
-                          )}
+                            ) : (
+                              <p className="text-sm text-zinc-500 italic mt-1">No photo attached</p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -654,20 +695,29 @@ export default function EmergencyReportsTable({
         </table>
       </div>
       {/* Render Modals */}
-      <CancellationModal 
+      <CancellationModal
         isOpen={isCancelModalOpen}
         onClose={closeCancellationModal}
         onSubmit={handleCancellationSubmit}
         reason={cancellationReason}
         setReason={setCancellationReason}
       />
-      <AssignmentModal 
+      <AssignmentModal
         isOpen={isAssignModalOpen}
         onClose={closeAssignModal}
         onSubmit={handleAssignSubmit}
         responders={availableResponders}
         selectedResponder={selectedResponderId}
         setSelectedResponder={setSelectedResponderId}
+      />
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDeleteReport}
+        title="Delete Report"
+        message="Are you sure you want to delete this emergency report? This action cannot be undone."
+        confirmText="Delete"
+        isDangerous={true}
       />
     </div>
   );

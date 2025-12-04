@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createApiClient } from "@/lib/api-client";
 import { toast } from 'react-hot-toast';
 
 const STATUS_OPTIONS = [
@@ -11,7 +11,7 @@ const STATUS_OPTIONS = [
 ];
 
 export default function ActivityLogTable({ dailyLogId }: { dailyLogId: string }) {
-  const supabase = createClient();
+  const api = createApiClient();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,10 +38,10 @@ export default function ActivityLogTable({ dailyLogId }: { dailyLogId: string })
     setLoading(true);
     setError(null);
     try {
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("Pengguna tidak terautentikasi");
       setUserId(user.id);
-      const { data, error: logsError } = await supabase
+      const { data, error: logsError } = await api
         .from("activity_logs")
         .select("*, profiles!responder_id(name)")
         .eq("daily_log_id", dailyLogId)
@@ -57,7 +57,7 @@ export default function ActivityLogTable({ dailyLogId }: { dailyLogId: string })
 
   const fetchEmergencyReports = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from("emergency_reports")
         .select("id, full_name, description, status")
         .order("created_at", { ascending: false });
@@ -114,7 +114,7 @@ export default function ActivityLogTable({ dailyLogId }: { dailyLogId: string })
     try {
       if (editingId) {
         // Update
-        const { error: updateError } = await supabase
+        const { error: updateError } = await api
           .from("activity_logs")
           .update({
             status: form.status,
@@ -127,7 +127,7 @@ export default function ActivityLogTable({ dailyLogId }: { dailyLogId: string })
         if (updateError) throw updateError;
       } else {
         // Insert
-        const { error: insertError } = await supabase
+        const { error: insertError } = await api
           .from("activity_logs")
           .insert([
             {

@@ -1,10 +1,10 @@
-import { createClient } from '@/lib/supabase/client';
+import { createApiClient } from '@/lib/api-client';
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 
 export default function BannerEditor() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [banners, setBanners] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -20,7 +20,7 @@ export default function BannerEditor() {
   }, []);
 
   const fetchBannerSettings = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await api
       .from('banner_settings')
       .select('is_enabled')
       .single();
@@ -32,10 +32,10 @@ export default function BannerEditor() {
 
   const toggleBannerSystem = async () => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('banner_settings')
         .update({ is_enabled: !isEnabled })
-        .eq('id', (await supabase.from('banner_settings').select('id').single()).data?.id);
+        .eq('id', (await api.from('banner_settings').select('id').single()).data?.id);
 
       if (error) throw error;
 
@@ -56,7 +56,7 @@ export default function BannerEditor() {
       setLoading(true);
       setError(null);
       
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('banners')
         .select('*')
         .order('created_at', { ascending: false });
@@ -85,7 +85,7 @@ export default function BannerEditor() {
       setError(null);
       setSuccess(null);
       
-      const { error } = await supabase
+      const { error } = await api
         .from('banners')
         .update({
           message: editMessage,
@@ -115,7 +115,7 @@ export default function BannerEditor() {
       setError(null);
       setSuccess(null);
       
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('banners')
         .insert({
           message: 'New Announcement',
@@ -125,7 +125,7 @@ export default function BannerEditor() {
         .single();
         
       if (error) {
-        console.error('Supabase error:', error);
+        console.error('Database error:', error);
         throw new Error(error.message);
       }
 
@@ -146,7 +146,7 @@ export default function BannerEditor() {
 
   const toggleBannerStatus = async (id: string, currentStatus: boolean) => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('banners')
         .update({ active: !currentStatus })
         .eq('id', id);
@@ -164,7 +164,7 @@ export default function BannerEditor() {
     if (!confirm('Are you sure you want to delete this banner?')) return;
     
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('banners')
         .delete()
         .eq('id', id);

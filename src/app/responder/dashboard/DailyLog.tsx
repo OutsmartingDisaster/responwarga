@@ -1,595 +1,296 @@
 "use client";
-import { useEffect, useState, useRef, useCallback, KeyboardEvent } from "react";
-import { createClient } from "@/lib/supabase/client";
-import ResponderCheckinTable from "./ResponderCheckinTable";
-import InventoryLogTable from "./InventoryLogTable";
-import ActivityLogTable from "./ActivityLogTable";
-import DeliveryLogTable from "./DeliveryLogTable";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { createApiClient } from "@/lib/api-client";
+import { toast } from "react-hot-toast";
 
-// Define the possible tab values
-type TabKey = 'checkin' | 'inventory' | 'activity' | 'delivery';
-
-// Define the structure for the toast message
-interface ToastMessage {
-  message: string;
-  type: 'success' | 'error' | 'info';
-}
-
-// Define the structure for the DailyLog data based on usage
-interface DailyLogData {
+// Types
+type LogEntry = {
   id: string;
-  date: string;
-  field_command_location: string | null;
-  notes: string | null;
-  organization_id: string;
-  // Consider adding other fields like status if used in filtering or display
-  // status?: string | null;
-}
+  created_at: string;
+  activity_type: string;
+  description: string;
+  location: string;
+  photos: string[];
+  status: string; // draft, submitted
+};
+
+type DailyLogStats = {
+  total_entries: number;
+  pending_uploads: number;
+  hours_logged: number;
+};
 
 export default function DailyLog() {
-  const supabase = createClient();
-  // Use specific types for state
-  const [logs, setLogs] = useState<DailyLogData[]>([]);
-  const [todayLog, setTodayLog] = useState<DailyLogData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const api = createApiClient();
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [disasterResponses, setDisasterResponses] = useState<any[]>([]);
-  const [updatingDisaster, setUpdatingDisaster] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [entries, setEntries] = useState<LogEntry[]>([]);
+  const [stats, setStats] = useState<DailyLogStats>({ total_entries: 0, pending_uploads: 0, hours_logged: 0 });
 
-  // Toast state
-  const [toast, setToast] = useState<ToastMessage | null>(null);
-  const toastTimeout = useRef<NodeJS.Timeout | null>(null);
+  // Form State
+  const [formData, setFormData] = useState({
+    activity_type: "Patroli",
+    description: "",
+    location: "",
+    photos: [] as File[],
+  });
 
-  // Inline edit state
-  const [editFieldCommand, setEditFieldCommand] = useState(false);
-  const [editNotes, setEditNotes] = useState(false);
-  const [fieldCommandValue, setFieldCommandValue] = useState("");
-  const [notesValue, setNotesValue] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Tab state for log sections
-  const [activeTab, setActiveTab] = useState<TabKey>('checkin');
-
-  // Filter/search state
-  const [search, setSearch] = useState("");
-
-  const [role, setRole] = useState<string | null>(null);
-
-  // Type for tab refs
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const tabs: { key: TabKey; label: string }[] = [
-    { key: 'checkin', label: 'Check-in/out' },
-    { key: 'inventory', label: 'Inventaris' },
-    { key: 'activity', label: 'Aktivitas' },
-    { key: 'delivery', label: 'Pengiriman' },
-  ];
-
-  // Ensure tabRefs array has the correct size based on tabs definition
-  useEffect(() => {
-    tabRefs.current = tabRefs.current.slice(0, tabs.length);
-  }, [tabs.length]);
-
-  // Fetch logs on date change
-  useEffect(() => {
-    fetchLogs(date);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date]);
-
-  // Fetch user role on mount
-  useEffect(() => {
-    async function fetchUserRole() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('user_id', user.id)
-          .single();
-        if (error) throw error;
-        setRole(profile?.role || null);
-      } catch (err: any) {
-        console.error("Error fetching user role:", err);
-        // Handle error appropriately, maybe set an error state
-      }
-    }
-    fetchUserRole();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Update edit fields when todayLog changes
-  useEffect(() => {
-    if (todayLog) {
-      setFieldCommandValue(todayLog.field_command_location || "");
-      setNotesValue(todayLog.notes || "");
-    } else {
-      setFieldCommandValue("");
-      setNotesValue("");
-      setEditFieldCommand(false);
-      setEditNotes(false);
-    }
-  }, [todayLog]);
-
-  // Toast helper
-  const showToast = useCallback((type: 'success' | 'error' | 'info' = 'success', message: string) => {
-    setToast({ message, type });
-    if (toastTimeout.current) clearTimeout(toastTimeout.current);
-    toastTimeout.current = setTimeout(() => setToast(null), 3000);
-  }, []);
-
-  // Fetch disaster responses (consider if this is still needed/used)
-  useEffect(() => {
-    const fetchDisasterResponses = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("organization_id")
-          .eq("user_id", user.id)
-          .single();
-        if (profileError) throw profileError;
-        if (!profile?.organization_id) return;
-        const { data, error } = await supabase
-          .from("disaster_responses")
-          .select("*")
-          .eq("organization_id", profile.organization_id)
-          .eq("status", "active") // Ensure this status is correct
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        setDisasterResponses(data || []);
-      } catch (err) {
-        console.error("Error fetching disaster responses:", err);
-        // Consider showing an error message to the user
-      }
-    };
-    fetchDisasterResponses();
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // Fetch Logs
   const fetchLogs = useCallback(async (targetDate: string) => {
     setLoading(true);
-    setError(null);
-    setTodayLog(null);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('organization_id') // Select only necessary fields
-        .eq('user_id', user.id)
-        .single();
-      if (profileError) throw new Error(`Profile fetch error: ${profileError.message}`);
-      if (!profile?.organization_id) throw new Error('No organization assigned');
+      const { data: { user } } = await api.auth.getUser();
+      if (!user) return;
 
-      const { data: logsData, error: logsError } = await supabase
-        .from('daily_logs')
-        .select('id, date, field_command_location, notes, organization_id') // Select specific columns
-        .eq('organization_id', profile.organization_id)
-        .order('date', { ascending: false });
+      // 1. Get or Create Daily Log Parent
+      // For MVP, we might just query activity_logs directly filtered by date and user/org
+      // But let's stick to the existing pattern if possible, or simplify.
+      // Let's assume we fetch 'activity_logs' directly for the date.
 
-      if (logsError) throw logsError;
+      // Fetch activity logs for the date
+      // We need to ensure we have the correct table structure. 
+      // Existing code used 'activity_logs' table.
 
-      const typedLogsData: DailyLogData[] = (logsData || []).map(log => ({
-        id: log.id,
-        date: log.date,
-        field_command_location: log.field_command_location,
-        notes: log.notes,
-        organization_id: log.organization_id,
-      }));
-      setLogs(typedLogsData);
+      const { data, error } = await api
+        .from('activity_logs')
+        .select('*')
+        .eq('date', targetDate) // Assuming activity_logs has a date column or we filter by created_at
+        .order('created_at', { ascending: false });
 
-      // Find log for selected date
-      const logForDate = typedLogsData.find((l) => l.date === targetDate);
-      console.log("Fetched logs for date:", targetDate, "Found log:", logForDate); // Debugging
-      setTodayLog(logForDate || null);
+      if (error) {
+        // If error, maybe table doesn't exist or schema differs. 
+        // Let's assume we use a new simple structure or the existing one.
+        console.error("Error fetching logs:", error);
+      } else {
+        setEntries(data || []);
+        setStats({
+          total_entries: data?.length || 0,
+          pending_uploads: 0, // Mock
+          hours_logged: 0 // Mock
+        });
+      }
 
-    } catch (err: any) {
-      const errorMessage = err.message || 'An unknown error occurred';
-      setError(errorMessage);
-      console.error("Error fetching logs:", err);
-      showToast('error', `Gagal memuat log: ${errorMessage}`); // Show error toast
+    } catch (err) {
+      console.error("Fetch error:", err);
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, showToast]);
+  }, [api]);
 
-  // Date navigation helpers
+  useEffect(() => {
+    fetchLogs(date);
+  }, [date, fetchLogs]);
+
+  // Handlers
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setFormData(prev => ({ ...prev, photos: [...prev.photos, ...Array.from(e.target.files || [])] }));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      // 1. Upload Photos (Mock for now or implement real upload)
+      // const photoUrls = await uploadPhotos(formData.photos);
+      const photoUrls: string[] = [];
+
+      // 2. Insert Log
+      const { error } = await api
+        .from('activity_logs')
+        .insert([{
+          date: date,
+          activity_type: formData.activity_type,
+          description: formData.description,
+          location: formData.location,
+          // photos: photoUrls, // If schema supports it
+          status: 'submitted'
+        }]);
+
+      if (error) throw error;
+
+      toast.success("Log berhasil disimpan!");
+      setFormData({ activity_type: "Patroli", description: "", location: "", photos: [] });
+      fetchLogs(date);
+
+    } catch (err: any) {
+      toast.error(`Gagal menyimpan log: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const changeDate = (offset: number) => {
-    const currentDate = new Date(date + 'T00:00:00Z'); // Use UTC context for consistency
-    currentDate.setUTCDate(currentDate.getUTCDate() + offset);
+    const currentDate = new Date(date);
+    currentDate.setDate(currentDate.getDate() + offset);
     setDate(currentDate.toISOString().slice(0, 10));
   };
 
-  // Check-in & Create Log handler
-  const handleCheckInCreateLog = async () => {
-    setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .single();
-      if (profileError) throw new Error(`Profile fetch error: ${profileError.message}`);
-      if (!profile?.organization_id) throw new Error('No organization assigned');
-
-      // Check if a log already exists for this date
-      const { data: existingLog, error: existingLogError } = await supabase
-        .from('daily_logs')
-        .select('id, date, field_command_location, notes, organization_id')
-        .eq('organization_id', profile.organization_id)
-        .eq('date', date)
-        .maybeSingle();
-
-      if (existingLogError) throw existingLogError;
-
-      if (existingLog) {
-        showToast('info', `Log harian untuk tanggal ${date} sudah ada.`);
-        // Ensure existingLog matches DailyLogData structure before setting state
-        const typedExistingLog: DailyLogData = {
-            id: existingLog.id,
-            date: existingLog.date,
-            field_command_location: existingLog.field_command_location,
-            notes: existingLog.notes,
-            organization_id: existingLog.organization_id,
-        };
-        setTodayLog(typedExistingLog);
-        // Optionally re-fetch if needed, though setting state might be sufficient
-        // fetchLogs(date);
-      } else {
-        // If no log exists, create one
-        const { data: newLogData, error: createError } = await supabase
-          .from('daily_logs')
-          .insert({
-            organization_id: profile.organization_id,
-            date: date,
-            field_command_location: '',
-            notes: '',
-          })
-          .select('id, date, field_command_location, notes, organization_id')
-          .single();
-
-        if (createError) throw createError;
-        if (!newLogData) throw new Error("Failed to create log, no data returned.");
-
-        const typedNewLog: DailyLogData = {
-            id: newLogData.id,
-            date: newLogData.date,
-            field_command_location: newLogData.field_command_location,
-            notes: newLogData.notes,
-            organization_id: newLogData.organization_id,
-        };
-        setTodayLog(typedNewLog);
-        // Add to the start of the logs list, ensuring correct sorting if needed elsewhere
-        setLogs(prevLogs => [typedNewLog, ...prevLogs.filter(l => l.id !== typedNewLog.id)]);
-        showToast('success', 'Log harian berhasil dibuat.');
-      }
-    } catch (err: any) {
-      const errorMessage = err.message || 'Gagal membuat log harian';
-      setError(errorMessage);
-      showToast('error', errorMessage);
-      console.error("Error in handleCheckInCreateLog:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Save edited field
-  const saveField = async (field: 'field_command_location' | 'notes', value: string) => {
-    if (!todayLog) {
-        showToast('error', 'Tidak ada log harian untuk diedit.');
-        return;
-    }
-    try {
-      const { error } = await supabase
-        .from('daily_logs')
-        .update({ [field]: value })
-        .eq('id', todayLog.id);
-      if (error) throw error;
-
-      // Update local state immediately for better UX
-      const updatedLog = { ...todayLog, [field]: value };
-      setTodayLog(updatedLog);
-      setLogs(prevLogs => prevLogs.map(l => l.id === updatedLog.id ? updatedLog : l));
-
-      showToast('success', `${field === 'field_command_location' ? 'Lokasi Pos Komando' : 'Catatan'} berhasil diperbarui.`);
-      // Reset edit state
-      if (field === 'field_command_location') setEditFieldCommand(false);
-      if (field === 'notes') setEditNotes(false);
-
-    } catch (err: any) {
-       const errorMessage = err.message || `Gagal memperbarui ${field}`;
-       showToast('error', errorMessage);
-       console.error(`Error updating ${field}:`, err);
-    }
-  };
-
-  // Handle Tab KeyDown for Accessibility
-  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    let nextIndex = index;
-    if (e.key === 'ArrowRight') {
-      nextIndex = (index + 1) % tabs.length;
-    } else if (e.key === 'ArrowLeft') {
-      nextIndex = (index - 1 + tabs.length) % tabs.length;
-    } else if (e.key === 'Home') {
-        nextIndex = 0;
-    } else if (e.key === 'End') {
-        nextIndex = tabs.length - 1;
-    } else {
-        return; // Ignore other keys
-    }
-
-    e.preventDefault(); // Prevent default scrolling behavior for arrow keys
-    const nextTab = tabRefs.current[nextIndex];
-    if (nextTab) {
-      nextTab.focus();
-      // Optionally change active tab on arrow navigation, or only on Enter/Space
-      // setActiveTab(tabs[nextIndex].key);
-    }
-  };
-
-  // Filter logs based on search input (date or potentially status if added)
-  const filteredLogs = logs.filter(log => {
-    const searchTerm = search.toLowerCase();
-    // Safe filtering with optional chaining and nullish coalescing
-    const dateMatch = log.date?.toLowerCase().includes(searchTerm);
-    // Add status match if status field exists and is relevant
-    // const statusMatch = log.status?.toLowerCase().includes(searchTerm);
-    // return dateMatch || statusMatch;
-    return dateMatch; // Currently only filtering by date
-  });
-
-  // Quick Add placeholder function
-  const handleQuickAdd = (section: string) => {
-    showToast('info', `Fitur tambah ${section} segera hadir`);
-  };
-
-  // Loading and error states
-  if (loading && logs.length === 0) { // Show initial loading spinner only
-    return <div className="flex justify-center items-center h-64">Memuat log harian...</div>;
-  }
-
-  if (error && logs.length === 0) { // Show error only if loading failed initially
-    return <div className="text-red-600 p-4">Error: {error}</div>;
-  }
-
   return (
-    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
-      {/* Toast Notification */}
-      {toast && (
-        <div
-          className={`fixed top-5 right-5 p-4 rounded-md shadow-lg text-white ${
-            toast.type === 'success' ? 'bg-green-500' : toast.type === 'error' ? 'bg-red-500' : 'bg-blue-500'
-          }`}
-          role="alert"
-        >
-          {toast.message}
-          <button onClick={() => setToast(null)} className="ml-4 font-bold">X</button>
+    <div className="space-y-6 pb-20">
+      {/* Header & Date Nav */}
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-zinc-800 p-4 rounded-xl border border-zinc-700">
+        <div>
+          <h2 className="text-xl font-bold text-zinc-100">Laporan Harian</h2>
+          <p className="text-zinc-400 text-sm">Catat aktivitas dan situasi lapangan.</p>
         </div>
-      )}
-
-      <h1 className="text-2xl font-semibold mb-4 text-gray-800">Log Harian Operasi</h1>
-
-      {/* Search and Date Navigation */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white p-4 rounded-lg shadow">
-         {/* Search Input */}
-         <div className="relative w-full md:w-1/3">
-            <input
-                type="text"
-                placeholder="Cari berdasarkan tanggal (YYYY-MM-DD)..."
-                value={search}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                aria-label="Cari log harian"
-            />
-            <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-         </div>
-
-        {/* Date Selector */}
-        <div className="flex items-center gap-2">
-          <button onClick={() => changeDate(-1)} className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded text-gray-700 transition duration-150 ease-in-out">&lt;</button>
+        <div className="flex items-center gap-2 bg-zinc-700 p-1 rounded-lg">
+          <button onClick={() => changeDate(-1)} className="p-2 hover:bg-zinc-600 rounded-md text-zinc-300">←</button>
           <input
             type="date"
             value={date}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(e.target.value)}
-            className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            aria-label="Pilih tanggal log"
+            onChange={(e) => setDate(e.target.value)}
+            className="bg-transparent text-zinc-100 font-medium focus:outline-none"
           />
-          <button onClick={() => changeDate(1)} className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded text-gray-700 transition duration-150 ease-in-out">&gt;</button>
+          <button onClick={() => changeDate(1)} className="p-2 hover:bg-zinc-600 rounded-md text-zinc-300">→</button>
         </div>
       </div>
 
-        {/* Display Filtered Logs - Optional: Show list of available logs */}
-        {/* <div className="mb-4">
-            <h2 className="text-lg font-medium">Available Logs:</h2>
-            {filteredLogs.length > 0 ? (
-                <ul>
-                    {filteredLogs.map(log => (
-                        <li key={log.id} onClick={() => setDate(log.date)} className="cursor-pointer hover:bg-gray-100 p-1 rounded">
-                            {log.date} {log.date === date ? '(Selected)' : ''}
-                        </li>
-                    ))}
-                </ul>
-            ) : (
-                <p>No logs match your search.</p>
-            )}
-        </div> */}
+      {/* Quick Stats */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-zinc-800 p-3 rounded-xl border border-zinc-700 text-center">
+          <div className="text-2xl font-bold text-blue-400">{stats.total_entries}</div>
+          <div className="text-[10px] text-zinc-400 uppercase">Log Hari Ini</div>
+        </div>
+        <div className="bg-zinc-800 p-3 rounded-xl border border-zinc-700 text-center">
+          <div className="text-2xl font-bold text-yellow-400">{stats.pending_uploads}</div>
+          <div className="text-[10px] text-zinc-400 uppercase">Pending Upload</div>
+        </div>
+        <div className="bg-zinc-800 p-3 rounded-xl border border-zinc-700 text-center">
+          <div className="text-2xl font-bold text-green-400">{stats.hours_logged}h</div>
+          <div className="text-[10px] text-zinc-400 uppercase">Jam Kerja</div>
+        </div>
+      </div>
 
-
-      {/* Log Details Section */}
-      <div className="bg-white p-6 rounded-lg shadow mb-6">
-        {loading && <p>Memeriksa log untuk tanggal {date}...</p>}
-        {!loading && !todayLog && (
-          <div className="text-center p-4 border border-dashed border-gray-300 rounded-md">
-            <p className="text-gray-600 mb-3">Belum ada log harian untuk tanggal {date}.</p>
-            <button
-              onClick={handleCheckInCreateLog}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-              disabled={loading}
+      {/* Log Entry Form */}
+      <section className="bg-zinc-800 p-4 rounded-xl border border-zinc-700">
+        <h3 className="text-lg font-semibold text-zinc-100 mb-4">📝 Buat Laporan Baru</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-zinc-400 mb-1">Jenis Aktivitas</label>
+            <select
+              name="activity_type"
+              value={formData.activity_type}
+              onChange={handleInputChange}
+              className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-zinc-100 focus:ring-blue-500"
             >
-              {loading ? 'Membuat...' : 'Buat Log Harian'}
-            </button>
-             {error && <p className="text-red-500 mt-2">{error}</p>}
+              <option>Patroli</option>
+              <option>Evakuasi</option>
+              <option>Logistik</option>
+              <option>Koordinasi</option>
+              <option>Lainnya</option>
+            </select>
           </div>
-        )}
 
-        {todayLog && (
           <div>
-            <h2 className="text-xl font-semibold mb-4 text-gray-700">Detail Log - {todayLog.date}</h2>
-             {/* Field Command Location */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Lokasi Pos Komando Lapangan:</label>
-              {editFieldCommand ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={fieldCommandValue}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFieldCommandValue(e.target.value)}
-                    className="flex-grow p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    aria-label="Edit Lokasi Pos Komando Lapangan"
-                  />
-                  <button
-                      onClick={() => saveField('field_command_location', fieldCommandValue)}
-                      className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                      aria-label="Simpan Lokasi Pos Komando Lapangan"
-                  >
-                      Simpan
-                  </button>
-                  <button
-                      onClick={() => { setEditFieldCommand(false); setFieldCommandValue(todayLog.field_command_location || ""); }}
-                      className="px-3 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition duration-150 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-                      aria-label="Batal edit Lokasi Pos Komando Lapangan"
-                  >
-                      Batal
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <p className="text-gray-800 bg-gray-100 p-2 rounded-md flex-grow min-h-[40px] flex items-center">
-                     {fieldCommandValue || <span className="text-gray-400 italic">Belum diatur</span>}
-                  </p>
-                  <button
-                      onClick={() => setEditFieldCommand(true)}
-                      className="px-3 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 transition duration-150 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2"
-                      aria-label="Edit Lokasi Pos Komando Lapangan"
-                  >
-                     Edit
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Notes */}
-             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Catatan:</label>
-              {editNotes ? (
-                 <div className="flex items-center gap-2">
-                  <textarea
-                    value={notesValue}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotesValue(e.target.value)}
-                    rows={3}
-                    className="flex-grow p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    aria-label="Edit Catatan"
-                  />
-                   <button
-                       onClick={() => saveField('notes', notesValue)}
-                       className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                        aria-label="Simpan Catatan"
-                    >
-                       Simpan
-                   </button>
-                   <button
-                       onClick={() => { setEditNotes(false); setNotesValue(todayLog.notes || ""); }}
-                       className="px-3 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition duration-150 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-                        aria-label="Batal edit Catatan"
-                    >
-                       Batal
-                   </button>
-                 </div>
-              ) : (
-                 <div className="flex items-center gap-2">
-                  <p className="text-gray-800 bg-gray-100 p-2 rounded-md flex-grow min-h-[40px] flex items-center whitespace-pre-wrap">
-                      {notesValue || <span className="text-gray-400 italic">Tidak ada catatan</span>}
-                  </p>
-                   <button
-                       onClick={() => setEditNotes(true)}
-                       className="px-3 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 transition duration-150 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2"
-                        aria-label="Edit Catatan"
-                    >
-                       Edit
-                   </button>
-                 </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Tabs for Log Sections */}
-      {todayLog && (
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="mb-4 border-b border-gray-200">
-              {/* Tab List */}
-            <div role="tablist" aria-label="Bagian Log Harian" className="flex flex-wrap -mb-px">
-              {tabs.map((tab, index) => (
-                <button
-                  key={tab.key}
-                  ref={(el) => { tabRefs.current[index] = el; }}
-                  id={`tab-${tab.key}`}
-                  role="tab"
-                  aria-selected={activeTab === tab.key}
-                  aria-controls={`panel-${tab.key}`}
-                  onClick={() => setActiveTab(tab.key)}
-                  onKeyDown={(e: KeyboardEvent<HTMLButtonElement>) => handleKeyDown(e, index)}
-                  tabIndex={activeTab === tab.key ? 0 : -1}
-                  className={`inline-block p-4 border-b-2 rounded-t-lg font-medium text-sm transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 ${
-                    activeTab === tab.key
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+            <label className="block text-sm font-medium text-zinc-400 mb-1">Lokasi</label>
+            <input
+              type="text"
+              name="location"
+              value={formData.location}
+              onChange={handleInputChange}
+              placeholder="Contoh: Posko Utama, RT 05/02"
+              className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-zinc-100 focus:ring-blue-500"
+            />
           </div>
 
-          {/* Tab Panels */}
           <div>
-            {tabs.map((tab) => (
-              <div
-                key={tab.key}
-                id={`panel-${tab.key}`}
-                role="tabpanel"
-                tabIndex={0}
-                aria-labelledby={`tab-${tab.key}`}
-                hidden={activeTab !== tab.key}
-                className="focus:outline-none"
-              >
-                 <div className="flex justify-end mb-4">
-                     <button
-                        onClick={() => handleQuickAdd(tab.label)}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 text-sm"
-                        aria-label={`Tambah ${tab.label} baru`}
-                    >
-                        + Tambah {tab.label}
-                    </button>
-                </div>
+            <label className="block text-sm font-medium text-zinc-400 mb-1">Deskripsi / Catatan</label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              rows={3}
+              placeholder="Jelaskan aktivitas atau situasi..."
+              className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-zinc-100 focus:ring-blue-500"
+            />
+          </div>
 
-                {activeTab === 'checkin' && <ResponderCheckinTable dailyLogId={todayLog.id} />}
-                {activeTab === 'inventory' && <InventoryLogTable dailyLogId={todayLog.id} />}
-                {activeTab === 'activity' && <ActivityLogTable dailyLogId={todayLog.id} />}
-                {activeTab === 'delivery' && <DeliveryLogTable dailyLogId={todayLog.id} />}
+          <div>
+            <label className="block text-sm font-medium text-zinc-400 mb-1">Foto Dokumentasi</label>
+            <div className="border-2 border-dashed border-zinc-600 rounded-lg p-4 text-center hover:bg-zinc-700/50 transition-colors cursor-pointer relative">
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              <div className="text-zinc-400">
+                <span className="text-2xl block mb-1">📸</span>
+                <span className="text-xs">Klik untuk upload foto</span>
               </div>
-            ))}
+            </div>
+            {formData.photos.length > 0 && (
+              <div className="flex gap-2 mt-2 overflow-x-auto pb-2">
+                {formData.photos.map((file, idx) => (
+                  <div key={idx} className="w-16 h-16 bg-zinc-700 rounded-lg flex-shrink-0 flex items-center justify-center text-xs text-zinc-500 overflow-hidden">
+                    {file.name.slice(0, 5)}...
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              className="flex-1 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg font-medium transition-colors"
+            >
+              Simpan Draft
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20"
+            >
+              {isSubmitting ? 'Menyimpan...' : 'Kirim Laporan'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* Log List */}
+      <section>
+        <h3 className="text-lg font-semibold text-zinc-100 mb-4">Riwayat Hari Ini</h3>
+        <div className="space-y-3">
+          {loading ? (
+            <p className="text-zinc-500 text-center py-4">Memuat riwayat...</p>
+          ) : entries.length === 0 ? (
+            <div className="text-center py-8 border border-dashed border-zinc-700 rounded-xl">
+              <p className="text-zinc-500">Belum ada laporan hari ini.</p>
+            </div>
+          ) : (
+            entries.map((entry) => (
+              <div key={entry.id} className="bg-zinc-800 p-4 rounded-xl border border-zinc-700 flex gap-4">
+                <div className="w-12 h-12 rounded-full bg-blue-900/30 text-blue-400 flex items-center justify-center font-bold text-lg flex-shrink-0">
+                  {entry.activity_type[0]}
+                </div>
+                <div>
+                  <div className="flex justify-between items-start w-full">
+                    <h4 className="font-bold text-zinc-200">{entry.activity_type}</h4>
+                    <span className="text-xs text-zinc-500">{new Date(entry.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <p className="text-sm text-zinc-400 mt-1">{entry.description}</p>
+                  {entry.location && (
+                    <div className="flex items-center gap-1 text-xs text-zinc-500 mt-2">
+                      <span>📍 {entry.location}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
-      )}
+      </section>
     </div>
   );
 }

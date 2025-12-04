@@ -1,316 +1,183 @@
-"use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { toast } from 'react-hot-toast';
+'use client'
 
-// Utility to generate slug from name
-function slugify(name: string) {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/--+/g, "-");
-}
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { Building2 } from 'lucide-react'
+import { StepIndicator, StepNavigation, type Step } from '@/components/onboarding'
+import { BasicInfoStep, ContactStep, LocationStep, DetailsStep } from '@/components/onboarding/steps'
+import { AuthMessage } from '@/components/auth'
+import { getSession } from '@/lib/auth/api'
+import {
+  INITIAL_FORM,
+  slugify,
+  checkSlugAvailability,
+  createOrganization,
+  linkUserToOrganization,
+  type OrganizationForm
+} from '@/lib/onboarding/organization'
+
+const STEPS: Step[] = [
+  { id: 1, title: 'Informasi Dasar', description: 'Nama dan jenis organisasi' },
+  { id: 2, title: 'Kontak', description: 'Email, telepon, website' },
+  { id: 3, title: 'Lokasi', description: 'Alamat dan wilayah' },
+  { id: 4, title: 'Detail', description: 'Deskripsi organisasi' },
+]
 
 export default function OrganizationOnboarding() {
-  const router = useRouter();
-  const supabase = createClient();
+  const router = useRouter()
+  const [currentStep, setCurrentStep] = useState(1)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [form, setForm] = useState<OrganizationForm>(INITIAL_FORM)
+  const [loading, setLoading] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null)
 
-  const [form, setForm] = useState({
-    name: "",
-    slug: "",
-    type: "",
-    email: "",
-    phone: "",
-    website: "",
-    address: "",
-    city: "",
-    province: "",
-    country: "",
-    map_location: "",
-    short_description: "",
-    description: "",
-    logo_url: "",
-    primary_contact_name: "",
-    primary_contact_email: "",
-    primary_contact_phone: "",
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const init = async () => {
+      const user = await getSession()
+      if (!user) {
+        router.push('/masuk')
+        return
+      }
+      setUserId(user.id)
+      if (user.profile?.name) {
+        setForm(prev => ({
+          ...prev,
+          primary_contact_name: user.profile?.name || '',
+          primary_contact_email: user.email,
+        }))
+      }
+      setCheckingSession(false)
+    }
+    init()
+  }, [router])
 
-  // Auto-generate slug as name is typed
   const handleNameChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const name = e.target.value;
-    const autoSlug = slugify(name);
-    setForm({ ...form, name, slug: autoSlug });
+    const name = e.target.value
+    const autoSlug = slugify(name)
+    setForm({ ...form, name, slug: autoSlug })
 
     if (autoSlug) {
-      const { data } = await supabase
-        .from("organizations")
-        .select("id")
-        .eq("slug", autoSlug)
-        .maybeSingle();
-      if (data) {
-        setError(`Slug '${autoSlug}' generated from name is already taken. Please choose a slightly different name.`);
-      } else {
-        setError(null);
-      }
+      const available = await checkSlugAvailability(autoSlug)
+      setSlugAvailable(available)
+      setError(available ? null : `Nama "${name}" sudah digunakan. Silakan pilih nama lain.`)
+    } else {
+      setSlugAvailable(null)
     }
-  };
+  }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setForm({ ...form, [e.target.name]: e.target.value })
+  }
+
+  const canProceed = () => {
+    if (currentStep === 1) return form.name.trim() !== '' && slugAvailable !== false
+    return true
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+    e.preventDefault()
+    if (!userId || !form.slug) return
 
-    if (!form.slug) {
-      setError("Organization name cannot be empty.");
-      setLoading(false);
-      return;
-    }
+    setLoading(true)
+    setError(null)
 
     try {
-      const { data: existing } = await supabase
-        .from("organizations")
-        .select("id")
-        .eq("slug", form.slug)
-        .maybeSingle();
-
-      if (existing) {
-        throw new Error(`Slug '${form.slug}' generated from the name is already taken. Please choose a slightly different name.`);
-      }
-
-      const { data: org, error: orgError } = await supabase
-        .from("organizations")
-        .insert([
-          {
-            ...form,
-            onboarding_complete: true,
-          },
-        ])
-        .select()
-        .single();
-
-      if (orgError) throw orgError;
-
-      const user = (await supabase.auth.getUser()).data.user;
-      if (!user) throw new Error("User not authenticated");
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({ organization_id: org.id })
-        .eq("user_id", user.id);
-
-      if (profileError) throw profileError;
-
-      router.push(`/responder/${org.slug}/dashboard`);
+      const org = await createOrganization(form)
+      await linkUserToOrganization(userId, org.id)
+      router.push(`/${org.slug}/admin/dashboard`)
     } catch (err: any) {
-      setError(err.message || "Failed to onboard organization.");
+      setError(err.message || 'Gagal membuat organisasi')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-zinc-900">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
 
   return (
-    <div className="max-w-xl mx-auto mt-12 p-8 bg-zinc-900 text-zinc-100 rounded shadow">
-      <h1 className="text-2xl font-bold mb-6">Organization Onboarding</h1>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Organization Name *</label>
-          <input
-            type="text"
-            name="name"
-            required
-            value={form.name}
-            onChange={handleNameChange}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-            placeholder="e.g., U-INSPIRE Indonesia"
-          />
-          {form.slug && (
-            <p className="text-xs text-zinc-400 mt-1">
-              Dashboard link will be: /responder/<span className="font-mono">{form.slug}</span>/
-            </p>
-          )}
-          {error && form.slug && error.includes(form.slug) && (
-            <p className="text-xs text-red-400 mt-1">{error}</p>
-          )}
-        </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Type</label>
-          <input
-            type="text"
-            name="type"
-            value={form.type}
-            onChange={handleChange}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-            placeholder="NGO, Government, etc."
-          />
-        </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Email</label>
-          <input
-            type="email"
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-          />
-        </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Phone</label>
-          <input
-            type="text"
-            name="phone"
-            value={form.phone}
-            onChange={handleChange}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-          />
-        </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Website</label>
-          <input
-            type="text"
-            name="website"
-            value={form.website}
-            onChange={handleChange}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-            placeholder="https://..."
-          />
-        </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Address</label>
-          <input
-            type="text"
-            name="address"
-            value={form.address}
-            onChange={handleChange}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-          />
-        </div>
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="block font-medium mb-1 text-zinc-200">City</label>
-            <input
-              type="text"
-              name="city"
-              value={form.city}
-              onChange={handleChange}
-              className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-            />
+    <div className="min-h-screen bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 text-white py-8 px-4">
+      <div className="max-w-2xl mx-auto">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
+            <Building2 className="w-8 h-8" />
           </div>
-          <div className="flex-1">
-            <label className="block font-medium mb-1 text-zinc-200">Province</label>
-            <input
-              type="text"
-              name="province"
-              value={form.province}
-              onChange={handleChange}
-              className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
+          <h1 className="text-3xl font-bold mb-2">Buat Organisasi</h1>
+          <p className="text-zinc-400">Lengkapi informasi organisasi Anda untuk memulai</p>
+        </div>
+
+        <StepIndicator steps={STEPS} currentStep={currentStep} />
+
+        <div className="bg-zinc-800/50 backdrop-blur-sm border border-zinc-700 rounded-xl p-6 shadow-xl">
+          <form onSubmit={handleSubmit}>
+            {currentStep === 1 && (
+              <BasicInfoStep
+                name={form.name}
+                slug={form.slug}
+                type={form.type}
+                shortDescription={form.short_description}
+                slugAvailable={slugAvailable}
+                onNameChange={handleNameChange}
+                onChange={handleChange}
+              />
+            )}
+            {currentStep === 2 && (
+              <ContactStep
+                email={form.email}
+                phone={form.phone}
+                website={form.website}
+                onChange={handleChange}
+              />
+            )}
+            {currentStep === 3 && (
+              <LocationStep
+                address={form.address}
+                city={form.city}
+                province={form.province}
+                country={form.country}
+                onChange={handleChange}
+              />
+            )}
+            {currentStep === 4 && (
+              <DetailsStep
+                description={form.description}
+                logoUrl={form.logo_url}
+                primaryContactName={form.primary_contact_name}
+                primaryContactEmail={form.primary_contact_email}
+                primaryContactPhone={form.primary_contact_phone}
+                onChange={handleChange}
+              />
+            )}
+
+            {error && <div className="mt-5"><AuthMessage type="error" message={error} /></div>}
+
+            <StepNavigation
+              currentStep={currentStep}
+              totalSteps={4}
+              canProceed={canProceed()}
+              loading={loading}
+              onPrev={() => setCurrentStep(s => Math.max(1, s - 1))}
+              onNext={() => setCurrentStep(s => Math.min(4, s + 1))}
             />
-          </div>
-          <div className="flex-1">
-            <label className="block font-medium mb-1 text-zinc-200">Country</label>
-            <input
-              type="text"
-              name="country"
-              value={form.country}
-              onChange={handleChange}
-              className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-            />
-          </div>
+          </form>
         </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Map Location</label>
-          <input
-            type="text"
-            name="map_location"
-            value={form.map_location}
-            onChange={handleChange}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-            placeholder="Latitude,Longitude or GeoJSON"
-          />
-        </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Short Description</label>
-          <input
-            type="text"
-            name="short_description"
-            value={form.short_description}
-            onChange={handleChange}
-            maxLength={100}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-          />
-        </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Description</label>
-          <textarea
-            name="description"
-            value={form.description}
-            onChange={handleChange}
-            rows={4}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-          />
-        </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Logo URL</label>
-          <input
-            type="text"
-            name="logo_url"
-            value={form.logo_url}
-            onChange={handleChange}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-            placeholder="https://.../logo.png"
-          />
-        </div>
-        <div>
-          <label className="block font-medium mb-1 text-zinc-200">Primary Contact Name</label>
-          <input
-            type="text"
-            name="primary_contact_name"
-            value={form.primary_contact_name}
-            onChange={handleChange}
-            className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-          />
-        </div>
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="block font-medium mb-1 text-zinc-200">Primary Contact Email</label>
-            <input
-              type="email"
-              name="primary_contact_email"
-              value={form.primary_contact_email}
-              onChange={handleChange}
-              className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-            />
-          </div>
-          <div className="flex-1">
-            <label className="block font-medium mb-1 text-zinc-200">Primary Contact Phone</label>
-            <input
-              type="text"
-              name="primary_contact_phone"
-              value={form.primary_contact_phone}
-              onChange={handleChange}
-              className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2 placeholder-zinc-400"
-            />
-          </div>
-        </div>
-        {error && !error.includes("Slug '") && (
-          <p className="text-red-400 bg-red-900/30 p-3 rounded">Error: {error}</p>
-        )}
-        <div className="pt-4">
+
+        <div className="mt-6 text-center">
           <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-600 text-white font-bold py-2 px-4 rounded"
+            onClick={() => router.push('/onboarding/waiting')}
+            className="text-zinc-500 hover:text-zinc-400 text-sm transition-colors"
           >
-            {loading ? "Submitting..." : "Complete Onboarding"}
+            Lewati untuk saat ini
           </button>
         </div>
-      </form>
+      </div>
     </div>
-  );
+  )
 }

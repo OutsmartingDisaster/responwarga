@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createApiClient } from '@/lib/api-client';
 import { toast } from 'react-hot-toast';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 interface Contribution {
   id: number;
@@ -28,12 +29,16 @@ interface Contribution {
 }
 
 export default function ContributionsTable({ responderView = false }: { responderView?: boolean }) {
-  const supabase = createClient();
+  const api = createApiClient();
   const [contributions, setContributions] = useState<Contribution[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // State for delete confirmation modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [contributionToDelete, setContributionToDelete] = useState<number | null>(null);
 
   useEffect(() => {
     fetchContributions();
@@ -43,12 +48,19 @@ export default function ContributionsTable({ responderView = false }: { responde
   const fetchContributions = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('contributions')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+
+      if (!Array.isArray(data)) {
+        console.error('ContributionsTable: fetched data is not an array:', data);
+        setContributions([]);
+        return;
+      }
+
       setContributions(data || []);
     } catch (err: any) {
       console.error('Error fetching contributions:', err);
@@ -59,7 +71,7 @@ export default function ContributionsTable({ responderView = false }: { responde
   };
 
   const fetchCurrentUser = async () => {
-    const { data } = await supabase.auth.getUser();
+    const { data } = await api.auth.getUser();
     setCurrentUser(data.user);
   };
 
@@ -68,7 +80,7 @@ export default function ContributionsTable({ responderView = false }: { responde
     responder_status: 'diterima' | 'sedang_berjalan' | 'selesai' | 'batal'
   ) => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('contributions')
         .update({ responder_status })
         .eq('id', id);
@@ -87,13 +99,13 @@ export default function ContributionsTable({ responderView = false }: { responde
 
   const updateStatus = async (id: number, status: 'menunggu' | 'disetujui' | 'dikirim' | 'dibatalkan' | 'assigned' | 'verified') => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('contributions')
         .update({ status })
         .eq('id', id);
 
       if (error) throw error;
-      setContributions(prev => prev.map(contribution => 
+      setContributions(prev => prev.map(contribution =>
         contribution.id === id ? { ...contribution, status } : contribution
       ));
     } catch (err: any) {
@@ -102,19 +114,28 @@ export default function ContributionsTable({ responderView = false }: { responde
     }
   };
 
-  const deleteContribution = async (id: number) => {
+  const confirmDeleteContribution = async () => {
+    if (!contributionToDelete) return;
+
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('contributions')
         .delete()
-        .eq('id', id);
+        .eq('id', contributionToDelete);
 
       if (error) throw error;
-      setContributions(prev => prev.filter(contribution => contribution.id !== id));
+      setContributions(prev => prev.filter(contribution => contribution.id !== contributionToDelete));
+      toast.success('Contribution deleted successfully');
     } catch (err: any) {
       console.error('Error deleting contribution:', err);
       setError(err.message);
+      toast.error('Failed to delete contribution');
     }
+  };
+
+  const handleDeleteClick = (id: number) => {
+    setContributionToDelete(id);
+    setIsDeleteModalOpen(true);
   };
 
   const toggleRow = (id: number) => {
@@ -133,7 +154,7 @@ export default function ContributionsTable({ responderView = false }: { responde
   }
 
   if (error) {
-  return (
+    return (
       <div className="p-4 bg-red-900/50 border border-red-700 rounded text-white">
         {error}
       </div>
@@ -165,10 +186,10 @@ export default function ContributionsTable({ responderView = false }: { responde
                       onClick={() => toggleRow(contribution.id)}
                       className="text-zinc-400 hover:text-white"
                     >
-                      <svg 
+                      <svg
                         className={`w-5 h-5 transform transition-transform ${expandedRows[contribution.id] ? 'rotate-90' : ''}`}
-                        fill="none" 
-                        stroke="currentColor" 
+                        fill="none"
+                        stroke="currentColor"
                         viewBox="0 0 24 24"
                       >
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
@@ -178,18 +199,17 @@ export default function ContributionsTable({ responderView = false }: { responde
                   <td className="px-4 py-3">{contribution.id}</td>
                   <td className="px-4 py-3">{contribution.full_name}</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      contribution.contribution_type === 'shelter' ? 'bg-purple-900/50 text-purple-200' :
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${contribution.contribution_type === 'shelter' ? 'bg-purple-900/50 text-purple-200' :
                       contribution.contribution_type === 'food_water' ? 'bg-blue-900/50 text-blue-200' :
-                      contribution.contribution_type === 'medical' ? 'bg-green-900/50 text-green-200' :
-                      'bg-yellow-900/50 text-yellow-200'
-                    }`}>
-                      {contribution.contribution_type.replace('_', ' ')}
+                        contribution.contribution_type === 'medical' ? 'bg-green-900/50 text-green-200' :
+                          'bg-yellow-900/50 text-yellow-200'
+                      }`}>
+                      {(contribution.contribution_type || 'Unknown').replace('_', ' ')}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <select
-                      value={contribution.status}
+                      value={contribution.status || 'menunggu'}
                       onChange={(e) => updateStatus(contribution.id, e.target.value as any)}
                       className="bg-zinc-700 border border-zinc-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
                     >
@@ -220,10 +240,10 @@ export default function ContributionsTable({ responderView = false }: { responde
                           <button
                             onClick={async () => {
                               // Assign to current user/org and set status to "assigned"
-                              const user = supabase.auth.getUser();
+                              const user = api.auth.getUser();
                               const userData = (await user).data.user;
                               const name = userData?.user_metadata?.full_name || userData?.email || "Responder";
-                              await supabase
+                              await api
                                 .from('contributions')
                                 .update({ assigned_to: name, status: 'assigned' })
                                 .eq('id', contribution.id);
@@ -250,41 +270,37 @@ export default function ContributionsTable({ responderView = false }: { responde
                                 <div className="mt-2 flex gap-2">
                                   <button
                                     onClick={() => updateResponderStatus(contribution.id, 'diterima')}
-                                    className={`px-2 py-1 rounded text-xs font-semibold ${
-                                      contribution.responder_status === 'diterima'
-                                        ? 'bg-blue-700 text-white'
-                                        : 'bg-zinc-700 text-blue-300'
-                                    }`}
+                                    className={`px-2 py-1 rounded text-xs font-semibold ${contribution.responder_status === 'diterima'
+                                      ? 'bg-blue-700 text-white'
+                                      : 'bg-zinc-700 text-blue-300'
+                                      }`}
                                   >
                                     Diterima
                                   </button>
                                   <button
                                     onClick={() => updateResponderStatus(contribution.id, 'sedang_berjalan')}
-                                    className={`px-2 py-1 rounded text-xs font-semibold ${
-                                      contribution.responder_status === 'sedang_berjalan'
-                                        ? 'bg-yellow-700 text-white'
-                                        : 'bg-zinc-700 text-yellow-300'
-                                    }`}
+                                    className={`px-2 py-1 rounded text-xs font-semibold ${contribution.responder_status === 'sedang_berjalan'
+                                      ? 'bg-yellow-700 text-white'
+                                      : 'bg-zinc-700 text-yellow-300'
+                                      }`}
                                   >
                                     Sedang Berjalan
                                   </button>
                                   <button
                                     onClick={() => updateResponderStatus(contribution.id, 'selesai')}
-                                    className={`px-2 py-1 rounded text-xs font-semibold ${
-                                      contribution.responder_status === 'selesai'
-                                        ? 'bg-green-700 text-white'
-                                        : 'bg-zinc-700 text-green-300'
-                                    }`}
+                                    className={`px-2 py-1 rounded text-xs font-semibold ${contribution.responder_status === 'selesai'
+                                      ? 'bg-green-700 text-white'
+                                      : 'bg-zinc-700 text-green-300'
+                                      }`}
                                   >
                                     Selesai
                                   </button>
                                   <button
                                     onClick={() => updateResponderStatus(contribution.id, 'batal')}
-                                    className={`px-2 py-1 rounded text-xs font-semibold ${
-                                      contribution.responder_status === 'batal'
-                                        ? 'bg-red-700 text-white'
-                                        : 'bg-zinc-700 text-red-300'
-                                    }`}
+                                    className={`px-2 py-1 rounded text-xs font-semibold ${contribution.responder_status === 'batal'
+                                      ? 'bg-red-700 text-white'
+                                      : 'bg-zinc-700 text-red-300'
+                                      }`}
                                   >
                                     Batal
                                   </button>
@@ -296,7 +312,7 @@ export default function ContributionsTable({ responderView = false }: { responde
                         {contribution.status !== "verified" && contribution.assigned_to && (
                           <button
                             onClick={async () => {
-                              await supabase
+                              await api
                                 .from('contributions')
                                 .update({ status: 'verified' })
                                 .eq('id', contribution.id);
@@ -318,7 +334,7 @@ export default function ContributionsTable({ responderView = false }: { responde
                             value={contribution.shelter || ""}
                             onChange={async (e) => {
                               const shelter = e.target.value;
-                              await supabase
+                              await api
                                 .from('contributions')
                                 .update({ shelter })
                                 .eq('id', contribution.id);
@@ -339,7 +355,7 @@ export default function ContributionsTable({ responderView = false }: { responde
                       </div>
                     ) : (
                       <button
-                        onClick={() => deleteContribution(contribution.id)}
+                        onClick={() => handleDeleteClick(contribution.id)}
                         className="text-red-500 hover:text-red-400"
                       >
                         Delete
@@ -379,23 +395,31 @@ export default function ContributionsTable({ responderView = false }: { responde
                             <h4 className="text-sm font-medium text-zinc-400">Location</h4>
                             <div className="mt-1 space-y-1">
                               <p className="text-sm">{contribution.address}</p>
-                              {typeof contribution.latitude === 'number' && typeof contribution.longitude === 'number' ? (
-                                <>
-                                  <p className="text-sm text-zinc-400">
-                                    Coordinates: {contribution.latitude.toFixed(6)}, {contribution.longitude.toFixed(6)}
-                                  </p>
-                                  <a
-                                    href={`https://www.google.com/maps?q=${contribution.latitude},${contribution.longitude}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-400 hover:text-blue-300 text-sm inline-block mt-1"
-                                  >
-                                    View on Google Maps
-                                  </a>
-                                </>
-                              ) : (
-                                <p className="text-sm text-zinc-400">Coordinates not available</p>
-                              )}
+                              <p className="text-sm">{contribution.address}</p>
+                              {(() => {
+                                const lat = contribution.latitude !== null && contribution.latitude !== undefined ? Number(contribution.latitude) : NaN;
+                                const lng = contribution.longitude !== null && contribution.longitude !== undefined ? Number(contribution.longitude) : NaN;
+                                const hasCoords = !isNaN(lat) && !isNaN(lng);
+
+                                if (hasCoords) {
+                                  return (
+                                    <>
+                                      <p className="text-sm text-zinc-400">
+                                        Coordinates: {lat.toFixed(6)}, {lng.toFixed(6)}
+                                      </p>
+                                      <a
+                                        href={`https://www.google.com/maps?q=${lat},${lng}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-400 hover:text-blue-300 text-sm inline-block mt-1"
+                                      >
+                                        View on Google Maps
+                                      </a>
+                                    </>
+                                  );
+                                }
+                                return <p className="text-sm text-zinc-400">Coordinates not available</p>;
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -434,9 +458,9 @@ export default function ContributionsTable({ responderView = false }: { responde
                             )}
                             <p className="mt-2 text-sm whitespace-pre-wrap">{contribution.description}</p>
                           </div>
-                          {contribution.photo_url && (
-                            <div>
-                              <h4 className="text-sm font-medium text-zinc-400">Photo</h4>
+                          <div>
+                            <h4 className="text-sm font-medium text-zinc-400">Photo</h4>
+                            {contribution.photo_url ? (
                               <a
                                 href={contribution.photo_url}
                                 target="_blank"
@@ -447,10 +471,17 @@ export default function ContributionsTable({ responderView = false }: { responde
                                   src={contribution.photo_url}
                                   alt="Contribution"
                                   className="max-w-sm rounded-lg shadow-lg"
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = 'https://placehold.co/300x200?text=Image+Error';
+                                    e.currentTarget.alt = 'Failed to load image';
+                                  }}
                                 />
                               </a>
-                            </div>
-                          )}
+                            ) : (
+                              <p className="text-sm text-zinc-500 italic mt-1">No photo attached</p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -461,6 +492,15 @@ export default function ContributionsTable({ responderView = false }: { responde
           </tbody>
         </table>
       </div>
-    </div>
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDeleteContribution}
+        title="Delete Contribution"
+        message="Are you sure you want to delete this contribution? This action cannot be undone."
+        confirmText="Delete"
+        isDangerous={true}
+      />
+    </div >
   );
 }

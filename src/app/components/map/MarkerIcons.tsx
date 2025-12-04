@@ -31,31 +31,39 @@ export const createDotIcon = (color: string, size: number = 16, borderWidth: num
       </div>
     `,
     iconSize: [size, size],
-    iconAnchor: [size/2, size/2],
-    popupAnchor: [0, -size/2]
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2]
   });
 };
 
 // Define marker types and their corresponding icons
-export const markerIcons = {
-  // Emergency markers - red dot with larger size (18px)
-  emergency: createDotIcon('#ef4444', 18, 2, 4, true),
-  
-  // Contribution markers - blue dots (16px)
-  shelter: createDotIcon('#3b82f6', 16, 2, 3),  // blue
-  food_water: createDotIcon('#3b82f6', 16, 2, 3), // blue
-  medical: createDotIcon('#3b82f6', 16, 2, 3),  // blue
-  clothing: createDotIcon('#3b82f6', 16, 2, 3),  // blue
-  
-  // Default fallback
-  default: createDotIcon('#3b82f6', 16, 2, 3)  // blue fallback
+// Define marker types and their corresponding icons
+export const getMarkerIcons = () => {
+  if (typeof window === 'undefined') return null;
+
+  return {
+    // Emergency markers - red dot with larger size (18px)
+    emergency: createDotIcon('#ef4444', 18, 2, 4, true),
+
+    // Contribution markers - blue dots (16px)
+    shelter: createDotIcon('#3b82f6', 16, 2, 3),  // blue
+    food_water: createDotIcon('#3b82f6', 16, 2, 3), // blue
+    medical: createDotIcon('#3b82f6', 16, 2, 3),  // blue
+    clothing: createDotIcon('#3b82f6', 16, 2, 3),  // blue
+
+    // Default fallback
+    default: createDotIcon('#3b82f6', 16, 2, 3)  // blue fallback
+  };
 };
 
 // Create a function to get the appropriate icon based on marker type
-export const getMarkerIcon = (type: string): L.DivIcon => {
+export const getMarkerIcon = (type: string): L.DivIcon | null => {
+  const icons = getMarkerIcons();
+  if (!icons) return null;
+
   console.log('Getting marker icon for type:', type);
-  const iconKey = type as keyof typeof markerIcons;
-  const icon = markerIcons[iconKey] || markerIcons.default;
-  console.log('Using icon:', iconKey in markerIcons ? iconKey : 'default');
+  const iconKey = type as keyof typeof icons;
+  const icon = icons[iconKey] || icons.default;
+  console.log('Using icon:', iconKey in icons ? iconKey : 'default');
   return icon;
 };

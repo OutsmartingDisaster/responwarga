@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createApiClient } from '@/lib/api-client';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { nanoid } from 'nanoid';
@@ -51,7 +51,7 @@ interface SharedLink {
 }
 
 export default function SpreadsheetManager() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sharedLinks, setSharedLinks] = useState<SharedLink[]>([]);
@@ -68,7 +68,7 @@ export default function SpreadsheetManager() {
 
   const fetchSharedLinks = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('shared_reports')
         .select('*')
         .order('created_at', { ascending: false });
@@ -93,7 +93,7 @@ export default function SpreadsheetManager() {
         ? null 
         : new Date(Date.now() + parseInt(expiryDays) * 24 * 60 * 60 * 1000).toISOString();
 
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('shared_reports')
         .insert({
           share_id: shareId,
@@ -121,7 +121,7 @@ export default function SpreadsheetManager() {
 
   const deleteSharedLink = async (id: string) => {
       try {
-        const { error } = await supabase
+        const { error } = await api
         .from('shared_reports')
         .delete()
         .eq('id', id);
@@ -140,15 +140,15 @@ export default function SpreadsheetManager() {
       setError(null);
 
       // Get current user's profile
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: profile } = await supabase
+      const { data: { user } } = await api.auth.getUser();
+      const { data: profile } = await api
         .from('profiles')
         .select('name, organization')
         .eq('id', user?.id)
         .single();
 
       // Fetch data
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from(type === 'emergency' ? 'emergency_reports' : 'contributions')
         .select('*')
         .order('created_at', { ascending: false });

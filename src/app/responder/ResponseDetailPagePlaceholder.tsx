@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { createApiClient } from '@/lib/api-client';
 import { toast } from 'react-hot-toast';
-import { Response } from '@/types/responses';
+// import { Response } from '@/types/responses'; // Removed unused import
 
 // --- Define Types (Reuse/Import later) ---
 type DisasterResponse = {
@@ -33,7 +33,7 @@ type AssignedMember = {
 export default function ResponseDetailPage() {
     const router = useRouter();
     const params = useParams();
-    const supabase = createClient();
+    const api = createApiClient();
 
     // --- IMPORTANT: These will be undefined when running this placeholder directly ---
     // --- They rely on the actual Next.js routing context ---
@@ -64,7 +64,7 @@ export default function ResponseDetailPage() {
 
             try {
                 // 1. Get Organization ID from Slug
-                const { data: orgData, error: orgError } = await supabase
+                const { data: orgData, error: orgError } = await api
                     .from('organizations')
                     .select('id')
                     .eq('slug', slug)
@@ -77,7 +77,7 @@ export default function ResponseDetailPage() {
                 setOrgIdFromSlug(fetchedOrgId); // Store it for potential use
 
                 // 2. Fetch Disaster Response Details
-                const { data: responseData, error: responseError } = await supabase
+                const { data: responseData, error: responseError } = await api
                     .from('disaster_responses')
                     .select('*')
                     .eq('id', responseId)
@@ -88,14 +88,14 @@ export default function ResponseDetailPage() {
 
                 // 3. *** Verify Ownership ***
                 if (responseData.organization_id !== fetchedOrgId) {
-                     console.error(`Ownership mismatch: Response Org ID (${responseData.organization_id}) vs Slug Org ID (${fetchedOrgId})`);
+                    console.error(`Ownership mismatch: Response Org ID (${responseData.organization_id}) vs Slug Org ID (${fetchedOrgId})`);
                     throw new Error("Anda tidak memiliki izin untuk melihat respon ini.");
                 }
 
                 setResponse(responseData);
 
                 // 4. Fetch Assigned Members
-                const { data: assignmentsData, error: assignmentsError } = await supabase
+                const { data: assignmentsData, error: assignmentsError } = await api
                     .from('team_assignments')
                     .select(`
                         member_id,
@@ -103,10 +103,10 @@ export default function ResponseDetailPage() {
                     `)
                     .eq('disaster_response_id', responseId); // Filter by response ID
 
-                 if (assignmentsError) throw assignmentsError;
+                if (assignmentsError) throw assignmentsError;
 
                 const members: AssignedMember[] = (assignmentsData || [])
-                    .filter(a => a.profiles) // Ensure profile exists
+                    .filter((a: any) => a.profiles) // Ensure profile exists
                     .map((a: any) => ({
                         id: a.profiles.user_id, // Use user_id from profiles
                         name: a.profiles.name || 'Nama Tidak Ada',
@@ -118,7 +118,7 @@ export default function ResponseDetailPage() {
                 // --- TODO: Fetch related logs (Check-in, Activity, etc.) ---
                 // Example for Activity Logs (assuming 'activity_logs' table exists and has 'disaster_response_id')
                 /*
-                const { data: activityLogs, error: activityError } = await supabase
+                const { data: activityLogs, error: activityError } = await api
                     .from('activity_logs')
                     .select('*') // Select specific columns needed
                     .eq('disaster_response_id', responseId)
@@ -134,14 +134,14 @@ export default function ResponseDetailPage() {
                 setError(`Gagal memuat data detail respon: ${err.message}`);
                 setResponse(null);
                 setAssignedMembers([]);
-                 // Clear other fetched data states
+                // Clear other fetched data states
             } finally {
                 setLoading(false);
             }
         };
 
         fetchInitialData();
-    }, [responseId, slug, supabase]); // Dependencies
+    }, [responseId, slug, api]); // Dependencies
 
 
     if (loading) return <div className="p-6 text-center text-zinc-400">Memuat detail respon...</div>;
@@ -167,7 +167,7 @@ export default function ResponseDetailPage() {
 
     return (
         <div className="p-4 md:p-6 bg-zinc-900 text-zinc-100 min-h-screen">
-             {/* Back Button - Needs slug which might be null in placeholder */}
+            {/* Back Button - Needs slug which might be null in placeholder */}
             <button
                 onClick={() => router.push(slug ? `/responder/${slug}/dashboard?menu=response_management` : '/responder')}
                 className="mb-6 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-zinc-300 bg-zinc-700 hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-zinc-900 focus:ring-blue-500"
@@ -189,15 +189,14 @@ export default function ResponseDetailPage() {
                         <span className="font-medium text-zinc-400 block">Tanggal Mulai:</span>
                         <span className="text-zinc-100">{formatDate(response.start_date)}</span>
                     </div>
-                     <div>
+                    <div>
                         <span className="font-medium text-zinc-400 block">Status:</span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            response.status === 'active' ? 'bg-green-600 text-green-100' :
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${response.status === 'active' ? 'bg-green-600 text-green-100' :
                             response.status === 'archived' ? 'bg-zinc-600 text-zinc-100' :
-                            'bg-yellow-600 text-yellow-100' // Default/other status
-                        }`}>{response.status}</span>
+                                'bg-yellow-600 text-yellow-100' // Default/other status
+                            }`}>{response.status}</span>
                     </div>
-                     <div>
+                    <div>
                         <span className="font-medium text-zinc-400 block">Dibuat Pada:</span>
                         <span className="text-zinc-100">{formatDate(response.created_at)}</span>
                     </div>
@@ -225,16 +224,16 @@ export default function ResponseDetailPage() {
                 ) : (
                     <p className="text-zinc-400 italic text-sm">Belum ada anggota tim yang ditugaskan.</p>
                 )}
-                 {/* TODO: Add button/UI to manage assignments if needed on this page */}
+                {/* TODO: Add button/UI to manage assignments if needed on this page */}
             </section>
 
-             {/* --- Log Sections (Placeholder) --- */}
+            {/* --- Log Sections (Placeholder) --- */}
             <section className="p-6 bg-zinc-800 rounded-lg shadow">
-                 <h2 className="text-xl font-semibold mb-4 text-zinc-200 border-b border-zinc-700 pb-2">Log Terkait</h2>
-                 {/* TODO: Implement Tabs or Accordions for different log types */}
+                <h2 className="text-xl font-semibold mb-4 text-zinc-200 border-b border-zinc-700 pb-2">Log Terkait</h2>
+                {/* TODO: Implement Tabs or Accordions for different log types */}
                 <p className="text-zinc-400 italic text-sm">Bagian log (Check-in, Aktivitas, Inventaris, Pengiriman) akan ditampilkan di sini...</p>
 
-                 {/* Example: Displaying Activity Logs if fetched */}
+                {/* Example: Displaying Activity Logs if fetched */}
                 {/*
                 <h3 className="text-lg font-semibold mt-4 mb-2 text-zinc-300">Log Aktivitas</h3>
                 {activityLogs && activityLogs.length > 0 ? (

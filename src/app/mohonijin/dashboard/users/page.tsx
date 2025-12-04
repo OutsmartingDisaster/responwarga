@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client'; // Client-side Supabase
+import { createApiClient } from '@/lib/api-client';
 import { toast } from 'react-hot-toast';
 import { UserPlus, Edit, Trash2 } from 'lucide-react';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 // Define a type for the combined user data
 interface ManagedUser {
@@ -19,7 +20,7 @@ type UserRole = 'org_admin' | 'org_responder' | 'admin';
 const availableRoles: UserRole[] = ['org_responder', 'org_admin', 'admin'];
 
 export default function UserManagementPage() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,12 +43,17 @@ export default function UserManagementPage() {
   const [isUpdatingUser, setIsUpdatingUser] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  // State for delete confirmation modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<{ id: string, email?: string } | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+
   // Fetch users function
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setGeneralError(null);
     try {
-      const { data, error: fetchError } = await supabase.rpc('get_all_users_with_profiles');
+      const { data, error: fetchError } = await api.rpc('get_all_users_with_profiles');
 
       if (fetchError) {
         throw new Error(fetchError.message || 'Failed to fetch users.');
@@ -60,7 +66,7 @@ export default function UserManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, [api]);
 
   useEffect(() => {
     fetchUsers();
@@ -129,35 +135,42 @@ export default function UserManagementPage() {
   };
 
   // Handle Delete User click
-  const handleDeleteUser = async (userId: string, email?: string) => {
-    if (!window.confirm(`Are you sure you want to delete user ${email || userId}? This action cannot be undone.`)) {
-      return;
-    }
-    // Optimistic UI update (optional): remove user from state immediately
-    // setUsers(users.filter(u => u.id !== userId));
-    const toastId = toast.loading(`Deleting user ${email || userId}...`);
+  const handleDeleteClick = (userId: string, userEmail: string | null) => {
+    setUserToDelete({ id: userId, email: userEmail || undefined });
+    setIsDeleteModalOpen(true);
+  };
+
+  // Confirm Delete User
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeletingUser(true);
     try {
       const response = await fetch('/api/admin/users', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId: userToDelete.id }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to delete user');
-      toast.success(`User ${email || userId} deleted successfully!`, { id: toastId });
+      toast.success(`User ${userToDelete.email || userToDelete.id} deleted successfully!`);
+      setIsDeleteModalOpen(false);
+      setUserToDelete(null);
       fetchUsers(); // Refresh list
     } catch (err: any) {
       console.error('Delete user error:', err);
-      toast.error(`Delete failed: ${err.message}`, { id: toastId });
-      // Revert optimistic update if it failed (if implemented)
-      // fetchUsers();
+      toast.error(`Delete failed: ${err.message}`);
+    } finally {
+      setIsDeletingUser(false);
     }
   };
 
+  if (loading && users.length === 0 && !generalError) {
+    return <div className="flex justify-center items-center h-screen"><span className="loading loading-spinner loading-lg"></span></div>;
+  }
+
   return (
-    <div className="p-4 md:p-6">
-      {/* Header and Add Button */}
-      <div className="flex justify-between items-center mb-4">
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold">User Management</h1>
         <button onClick={() => setShowAddModal(true)} className="btn btn-primary btn-sm">
           <UserPlus size={18} className="mr-1" /> Add User
@@ -194,7 +207,7 @@ export default function UserManagementPage() {
                     <button onClick={() => handleEditClick(user)} className="btn btn-ghost btn-xs">
                       <Edit size={16} />
                     </button>
-                    <button onClick={() => handleDeleteUser(user.id, user.email)} className="btn btn-ghost btn-xs text-error">
+                    <button onClick={() => handleDeleteClick(user.id, user.email || null)} className="btn btn-ghost btn-xs text-error">
                       <Trash2 size={16} />
                     </button>
                   </td>
@@ -261,7 +274,7 @@ export default function UserManagementPage() {
               <div className="form-control w-full mb-4">
                 <label className="label"><span className="label-text">Role</span></label>
                 <select className="select select-bordered w-full" value={editUserRole} onChange={(e) => setEditUserRole(e.target.value as UserRole)} required disabled={isUpdatingUser}>
-                   {availableRoles.map(role => (<option key={role} value={role}>{role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>))}
+                  {availableRoles.map(role => (<option key={role} value={role}>{role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>))}
                 </select>
               </div>
               {editError && <p className="text-error text-sm mb-2">Error: {editError}</p>}
@@ -276,6 +289,16 @@ export default function UserManagementPage() {
           <input type="checkbox" id="edit-user-modal-close" className="modal-toggle" checked={showEditModal} readOnly />
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDeleteUser}
+        title="Delete User"
+        message={`Are you sure you want to delete user ${userToDelete?.email || userToDelete?.id}? This action cannot be undone.`}
+        confirmText="Delete"
+        isDangerous={true}
+      />
     </div>
   );
-} 
+}

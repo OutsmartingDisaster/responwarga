@@ -35,7 +35,7 @@ export default function LocationSection({
         >
           Share Location
         </button>
-        {location && (
+        {location && location.latitude !== null && location.longitude !== null && (
           <span className="text-sm text-green-400">
             Location shared: {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
           </span>

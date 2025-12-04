@@ -1,13 +1,6 @@
-"use client"; // Ensure this is a client component
+"use client";
 
-import React, { useState, useEffect } from 'react'; // Import hooks
-import { useRouter } from 'next/navigation'; // Import useRouter
-import { useSupabase } from "@/contexts/SupabaseClientProvider"; // Import context hook
-
-// Initialize Supabase client // Remove this initialization block
-// const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-// const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-// const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import React, { useState, useEffect, use } from 'react';
 
 interface SharedReport {
   id: string;
@@ -49,34 +42,43 @@ interface ReportData {
 }
 
 interface SharedReportPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export default function SharedReportPage({ params }: SharedReportPageProps) {
-  const router = useRouter(); // If needed
-  const supabase = useSupabase(); // Get client from hook
-  const [reportWithCreator, setReportWithCreator] = useState<any>(null); // Use proper types
+  const { id: shareId } = use(params);
+  const [reportWithCreator, setReportWithCreator] = useState<any>(null);
   const [data, setData] = useState<ReportData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const shareId = params.id; 
 
   useEffect(() => {
-    if (!supabase || !shareId) return;
+    if (!shareId) return;
 
     const fetchSharedData = async () => {
       setLoading(true);
       setError(null);
       try {
         // Fetch shared report metadata
-        const { data: reportData, error: reportError } = await supabase
-          .from('shared_reports')
-          .select('*')
-          .eq('share_id', shareId)
-          .eq('is_active', true)
-          .single();
+        const reportResponse = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'select',
+            table: 'shared_reports',
+            filters: [
+              { column: 'share_id', operator: 'eq', value: shareId },
+              { column: 'is_active', operator: 'eq', value: true }
+            ],
+            single: true
+          })
+        });
 
-        if (reportError) throw new Error(reportError.message);
+        const reportResult = await reportResponse.json();
+
+        if (!reportResponse.ok) throw new Error(reportResult.error?.message || 'Failed to fetch report');
+        const reportData = reportResult.data;
+
         if (!reportData) throw new Error('Report not found');
         if (reportData.expires_at && new Date(reportData.expires_at) < new Date()) {
           throw new Error('This shared report has expired');
@@ -84,26 +86,38 @@ export default function SharedReportPage({ params }: SharedReportPageProps) {
 
         let creatorProfile = null;
         if (reportData.created_by) {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('name, organization')
-            .eq('id', reportData.created_by)
-            .single();
-          if (profileData) creatorProfile = profileData;
+          const profileResponse = await fetch('/api/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'select',
+              table: 'profiles',
+              columns: 'name, organization',
+              filters: [{ column: 'id', operator: 'eq', value: reportData.created_by }],
+              single: true
+            })
+          });
+          const profileResult = await profileResponse.json();
+          if (profileResult.data) creatorProfile = profileResult.data;
         }
         const fetchedReportWithCreator = { ...reportData, creator: creatorProfile };
         setReportWithCreator(fetchedReportWithCreator);
 
-        const { data: items, error: itemsError } = await supabase
-          .from(reportData.type === 'emergency' ? 'emergency_reports' : 'contributions')
-          .select('*')
-          // Add filtering/linking based on how shared reports relate to items
-          // This likely needs adjustment - assuming shared_reports has a relation (e.g., report_ids array?)
-          // Or maybe the items table has a shared_report_id? 
-          // For now, fetching ALL items - THIS IS LIKELY INCORRECT AND NEEDS REFINEMENT
-          .order('created_at', { ascending: false }); 
+        // Fetch items
+        const itemsResponse = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'select',
+            table: reportData.type === 'emergency' ? 'emergency_reports' : 'contributions',
+            order: [{ column: 'created_at', ascending: false }]
+          })
+        });
 
-        if (itemsError) throw new Error(itemsError.message);
+        const itemsResult = await itemsResponse.json();
+        if (!itemsResponse.ok) throw new Error(itemsResult.error?.message || 'Failed to fetch items');
+        const items = itemsResult.data;
+
         if (!items) throw new Error('No data found');
 
         const transformedData = items.map((item: Record<string, any>) => ({
@@ -121,9 +135,10 @@ export default function SharedReportPage({ params }: SharedReportPageProps) {
           consent_statement: item.consent_statement,
           details: reportData.type === 'contribution' ? {
             ...(item.capacity && { capacity: item.capacity }),
-            ...(item.facilities && { facilities: Object.entries(item.facilities)
-              .filter(([_, value]) => value)
-              .map(([key]) => key.replace('_', ' '))
+            ...(item.facilities && {
+              facilities: Object.entries(item.facilities)
+                .filter(([_, value]) => value)
+                .map(([key]) => key.replace('_', ' '))
             }),
             ...(item.quantity && { quantity: item.quantity }),
             ...(item.unit && { unit: item.unit })
@@ -142,7 +157,7 @@ export default function SharedReportPage({ params }: SharedReportPageProps) {
 
     fetchSharedData();
 
-  }, [supabase, shareId]); // Add dependencies
+  }, [shareId]); // Add dependencies
 
   // Render loading/error states
   if (loading) return <div>Loading shared report...</div>; // Add better loading UI
@@ -156,9 +171,9 @@ export default function SharedReportPage({ params }: SharedReportPageProps) {
       <header className="bg-zinc-800 border-b border-zinc-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center space-x-4">
-            <img 
-              src="/icons/response.svg" 
-              alt="Respon Warga Logo" 
+            <img
+              src="/icons/response.svg"
+              alt="Respon Warga Logo"
               className="w-10 h-10"
             />
             <div>
@@ -210,17 +225,16 @@ export default function SharedReportPage({ params }: SharedReportPageProps) {
                     <td className="px-4 py-3">{item.id}</td>
                     <td className="px-4 py-3">{item.full_name}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        reportWithCreator.type === 'emergency'
-                          ? item.type === 'evacuation' ? 'bg-red-900/50 text-red-200'
-                            : item.type === 'food_water' ? 'bg-blue-900/50 text-blue-200'
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${reportWithCreator.type === 'emergency'
+                        ? item.type === 'evacuation' ? 'bg-red-900/50 text-red-200'
+                          : item.type === 'food_water' ? 'bg-blue-900/50 text-blue-200'
                             : item.type === 'medical' ? 'bg-green-900/50 text-green-200'
-                            : 'bg-yellow-900/50 text-yellow-200'
-                          : item.type === 'shelter' ? 'bg-purple-900/50 text-purple-200'
-                            : item.type === 'food_water' ? 'bg-blue-900/50 text-blue-200'
+                              : 'bg-yellow-900/50 text-yellow-200'
+                        : item.type === 'shelter' ? 'bg-purple-900/50 text-purple-200'
+                          : item.type === 'food_water' ? 'bg-blue-900/50 text-blue-200'
                             : item.type === 'medical' ? 'bg-green-900/50 text-green-200'
-                            : 'bg-yellow-900/50 text-yellow-200'
-                      }`}>
+                              : 'bg-yellow-900/50 text-yellow-200'
+                        }`}>
                         {item.type.replace('_', ' ')}
                       </span>
                     </td>
@@ -239,9 +253,9 @@ export default function SharedReportPage({ params }: SharedReportPageProps) {
                     </td>
                     <td className="px-4 py-3">
                       {item.photo_url ? (
-                        <a 
-                          href={item.photo_url} 
-                          target="_blank" 
+                        <a
+                          href={item.photo_url}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-400 hover:text-blue-300"
                         >
@@ -270,12 +284,11 @@ export default function SharedReportPage({ params }: SharedReportPageProps) {
                       </td>
                     )}
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        item.status === 'active' ? 'bg-green-900/50 text-green-200'
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${item.status === 'active' ? 'bg-green-900/50 text-green-200'
                         : item.status === 'resolved' ? 'bg-blue-900/50 text-blue-200'
-                        : item.status === 'needs_verification' ? 'bg-yellow-900/50 text-yellow-200'
-                        : 'bg-red-900/50 text-red-200'
-                      }`}>
+                          : item.status === 'needs_verification' ? 'bg-yellow-900/50 text-yellow-200'
+                            : 'bg-red-900/50 text-red-200'
+                        }`}>
                         {item.status.replace('_', ' ')}
                       </span>
                     </td>

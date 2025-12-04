@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+.next
+.git
+.gitignore
+.env*
+.docker
+scripts/run-migrations.cjs
+supabase/migrations/*.sql~

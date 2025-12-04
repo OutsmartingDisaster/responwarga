@@ -8,7 +8,8 @@ import SOSButton from './components/SOSButton';
 import UserPolicyModal from './components/UserPolicyModal';
 import AboutModal from './components/AboutModal';
 import MarqueeBanner from './components/MarqueeBanner';
-import { useSupabase } from '../contexts/SupabaseClientProvider';
+import { getSession } from '@/lib/auth/api';
+
 
 type FilterType = 'all' | 'emergency' | 'contribution';
 type EmergencyType = 'all' | 'evacuation' | 'food_water' | 'medical' | 'other' | 'none';
@@ -29,37 +30,55 @@ export default function Home() {
   const [showContributionForm, setShowContributionForm] = useState(false);
   const [showUserPolicyModal, setShowUserPolicyModal] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(true);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [mapCenter, setMapCenter] = useState<[number, number]>([-6.2088, 106.8456]);
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [emergencyType, setEmergencyType] = useState<EmergencyType>('all');
   const [contributionType, setContributionType] = useState<ContributionType>('all');
+
+  useEffect(() => {
+    const hydrateSession = async () => {
+      const user = await getSession();
+      setIsSuperAdmin(user?.role === 'super_admin');
+    };
+    hydrateSession();
+  }, []);
 
   // State for fetched emergency reports
   const [emergencyReports, setEmergencyReports] = useState<any[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [reportsError, setReportsError] = useState<string | null>(null);
 
-  // Get Supabase client instance from context
-  const supabase = useSupabase();
-
   // Fetch emergency reports data
   useEffect(() => {
-    // Ensure supabase client is available before fetching
-    if (!supabase) return;
-
     const fetchReports = async () => {
       setReportsLoading(true);
       setReportsError(null);
       try {
         // Fetch only reports relevant for the public map
-        const { data, error } = await supabase
-          .from('emergency_reports')
-          .select('*')
-          .in('status', ['verified', 'ditugaskan', 'on progress']);
+        const response = await fetch('/api/data', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'select',
+            table: 'emergency_reports',
+            filters: [
+              { column: 'status', operator: 'in', value: ['verified', 'ditugaskan', 'on progress'] }
+            ]
+          })
+        });
 
-        if (error) throw error;
-        setEmergencyReports(data || []);
-        console.log('Fetched emergency reports for map:', data);
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error?.message || 'Failed to fetch reports');
+        }
+
+        setEmergencyReports(result.data || []);
+        console.log('Fetched emergency reports for map:', result.data);
       } catch (err: any) {
         console.error("Error fetching emergency reports:", err);
         setReportsError(err.message);
@@ -70,7 +89,7 @@ export default function Home() {
     };
 
     fetchReports();
-  }, [supabase]);
+  }, []);
 
   const handleFormSuccess = (latitude: number, longitude: number) => {
     setMapCenter([latitude, longitude]);
@@ -80,8 +99,8 @@ export default function Home() {
     <main className="relative w-full h-screen overflow-hidden bg-zinc-900">
       {/* Map Component */}
       <div className="absolute inset-0 z-0">
-        <Map 
-          center={mapCenter} 
+        <Map
+          center={mapCenter}
           filterType={filterType}
           emergencyType={emergencyType}
           contributionType={contributionType}
@@ -98,10 +117,10 @@ export default function Home() {
       <header className="absolute top-8 left-0 right-0 p-4 flex flex-col z-20">
         <h1 className="text-2xl font-heading font-bold text-white flex items-center gap-2">
           <div className="flex items-center">
-            <img 
+            <img
               src="/icons/response.svg"
-              alt="Respon Warga" 
-              className="w-8 h-8 mr-2" 
+              alt="Respon Warga"
+              className="w-8 h-8 mr-2"
             />
           </div>
           Respon Warga
@@ -169,7 +188,7 @@ export default function Home() {
             Beri Bantuan
           </button>
         </div>
-        
+
         {/* Footer Links */}
         <div className="flex justify-center space-x-4 text-xs sm:text-sm">
           <button
@@ -194,14 +213,66 @@ export default function Home() {
       </div>
 
       {/* Forms and Modals */}
+      {showAnnouncementModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-zinc-900/80 backdrop-blur-sm"
+            onClick={() => {
+              if (isSuperAdmin) {
+                setShowAnnouncementModal(false);
+              }
+            }}
+          />
+          <div className="relative w-full max-w-2xl rounded-3xl bg-white/95 p-8 shadow-2xl border border-white/40">
+            <div className="flex justify-between items-start gap-4">
+              <div>
+                <p className="uppercase text-xs tracking-[0.3em] text-red-500 font-semibold">
+                  Pengumuman Publik
+                </p>
+                <h2 className="mt-3 text-2xl font-heading text-zinc-900">
+                  Fitur Respon Warga masih tahap uji coba
+                </h2>
+              </div>
+              {isSuperAdmin && (
+                <button
+                  aria-label="Tutup pengumuman"
+                  className="text-zinc-500 hover:text-zinc-800 transition"
+                  onClick={() => setShowAnnouncementModal(false)}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <p className="mt-6 text-zinc-700 leading-relaxed">
+              “Fitur utama Respon Warga masih dalam tahap ujicoba, kami belum membuka permintaan dan kontribusi bantuan karena kami tidak ingin sekedar menghimpun data.
+
+              Apabila kamu ingin berkontribusi, Kami sedang mengaktifkan insiatif data crowdsourcing untuk Banjir Sumatra yang bisa diklik di sini.”
+            </p>
+            {!isSuperAdmin && (
+              <p className="mt-4 text-sm text-zinc-500">
+                Pengumuman ini hanya dapat ditutup oleh tim inti Respon Warga (super admin).
+              </p>
+            )}
+            <a
+              href="https://responwarga.uinspire.id/crowdsourcing/a283c2b9-2966-4ce9-97eb-b96201b968ab/"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-white font-medium shadow-lg hover:bg-blue-500 transition"
+            >
+              Buka Inisiatif Banjir Sumatra
+              <span aria-hidden>↗</span>
+            </a>
+          </div>
+        </div>
+      )}
       {showEmergencyForm && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="min-h-screen px-4 flex items-center justify-center">
             <div className="fixed inset-0 bg-black/70" onClick={() => setShowEmergencyForm(false)} />
             <div className="relative bg-zinc-800 w-full max-w-lg rounded-lg shadow-xl overflow-hidden">
               <div className="max-h-[90vh] overflow-y-auto">
-                <EmergencyReportForm 
-                  onClose={() => setShowEmergencyForm(false)} 
+                <EmergencyReportForm
+                  onClose={() => setShowEmergencyForm(false)}
                   onSuccess={handleFormSuccess}
                 />
               </div>
@@ -215,8 +286,8 @@ export default function Home() {
             <div className="fixed inset-0 bg-black/70" onClick={() => setShowContributionForm(false)} />
             <div className="relative bg-zinc-800 w-full max-w-lg rounded-lg shadow-xl overflow-hidden">
               <div className="max-h-[90vh] overflow-y-auto">
-                <ContributionForm 
-                  onClose={() => setShowContributionForm(false)} 
+                <ContributionForm
+                  onClose={() => setShowContributionForm(false)}
                   onSuccess={handleFormSuccess}
                 />
               </div>

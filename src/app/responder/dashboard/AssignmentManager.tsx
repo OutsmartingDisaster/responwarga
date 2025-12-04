@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createClient } from "@/../lib/supabase/client";
+import { createApiClient } from "@/lib/api-client";
 
 export default function AssignmentManager() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [responders, setResponders] = useState<any[]>([]);
   const [emergencyReports, setEmergencyReports] = useState<any[]>([]);
@@ -29,9 +29,9 @@ export default function AssignmentManager() {
     setError(null);
     try {
       // Get org id for current user
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("Not authenticated");
-      const { data: profile } = await supabase
+      const { data: profile } = await api
         .from("profiles")
         .select("organization_id")
         .eq("user_id", user.id)
@@ -40,7 +40,7 @@ export default function AssignmentManager() {
       setOrgId(profile.organization_id);
 
       // Fetch responders in org
-      const { data: respondersData } = await supabase
+      const { data: respondersData } = await api
         .from("profiles")
         .select("id, name, email")
         .eq("organization_id", profile.organization_id)
@@ -48,21 +48,21 @@ export default function AssignmentManager() {
       setResponders(respondersData || []);
 
       // Fetch unassigned emergency reports
-      const { data: reportsData } = await supabase
+      const { data: reportsData } = await api
         .from("emergency_reports")
         .select("id, full_name, description, status")
         .order("created_at", { ascending: false });
       setEmergencyReports(reportsData || []);
 
       // Fetch unassigned contributions
-      const { data: contribData } = await supabase
+      const { data: contribData } = await api
         .from("contributions")
         .select("id, full_name, description, status")
         .order("created_at", { ascending: false });
       setContributions(contribData || []);
 
       // Fetch current assignments for org
-      const { data: assignmentsData } = await supabase
+      const { data: assignmentsData } = await api
         .from("assignments")
         .select("*, profiles!responder_id(name)")
         .eq("organization_id", profile.organization_id)
@@ -97,7 +97,7 @@ export default function AssignmentManager() {
         assignmentPayload.contribution_id = form.targetId;
       }
       // Insert assignment (unique constraint will prevent duplicates)
-      const { error: insertError } = await supabase
+      const { error: insertError } = await api
         .from("assignments")
         .insert([assignmentPayload]);
       if (insertError) throw insertError;
@@ -144,19 +144,19 @@ export default function AssignmentManager() {
             <option value="">Pilih target</option>
             {form.type === "emergency_report"
               ? emergencyReports
-                  .filter(r => !assignedReportIds.includes(r.id))
-                  .map(r => (
-                    <option key={r.id} value={r.id}>
-                      {r.full_name} - {r.description?.slice(0, 30)}... [{r.status}]
-                    </option>
-                  ))
+                .filter(r => !assignedReportIds.includes(r.id))
+                .map(r => (
+                  <option key={r.id} value={r.id}>
+                    {r.full_name} - {r.description?.slice(0, 30)}... [{r.status}]
+                  </option>
+                ))
               : contributions
-                  .filter(c => !assignedContributionIds.includes(c.id))
-                  .map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name} - {c.description?.slice(0, 30)}... [{c.status}]
-                    </option>
-                  ))}
+                .filter(c => !assignedContributionIds.includes(c.id))
+                .map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.full_name} - {c.description?.slice(0, 30)}... [{c.status}]
+                  </option>
+                ))}
           </select>
         </div>
         <div>

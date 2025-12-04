@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createApiClient } from '@/lib/api-client';
 import { toast } from 'react-hot-toast';
 
 interface Content {
@@ -14,7 +14,7 @@ interface Content {
 }
 
 export default function ContentTable() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [contents, setContents] = useState<Content[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,12 +26,19 @@ export default function ContentTable() {
   const fetchContents = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('contents')
         .select('*')
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
+
+      if (!Array.isArray(data)) {
+        console.error('ContentTable: fetched data is not an array:', data);
+        setContents([]);
+        return;
+      }
+
       setContents(data || []);
     } catch (err: any) {
       console.error('Error fetching contents:', err);
@@ -43,13 +50,13 @@ export default function ContentTable() {
 
   const updateStatus = async (id: string, status: 'draft' | 'published') => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('contents')
         .update({ status })
         .eq('id', id);
 
       if (error) throw error;
-      setContents(prev => prev.map(content => 
+      setContents(prev => prev.map(content =>
         content.id === id ? { ...content, status } : content
       ));
     } catch (err: any) {
@@ -60,7 +67,7 @@ export default function ContentTable() {
 
   const deleteContent = async (id: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('contents')
         .delete()
         .eq('id', id);
@@ -119,7 +126,7 @@ export default function ContentTable() {
               </td>
               <td className="px-4 py-3 space-x-2">
                 <button
-                  onClick={() => {/* Implement edit functionality */}}
+                  onClick={() => {/* Implement edit functionality */ }}
                   className="text-blue-500 hover:text-blue-400"
                 >
                   Edit

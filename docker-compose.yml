@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-responwarga}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-responwarga}
+      POSTGRES_DB: ${DB_NAME:-responwarga}
+    ports:
+      - "${DB_PORT:-54322}:5432"
+    volumes:
+      - ./.docker/postgres/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-responwarga}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@responwarga.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./.docker/pgadmin:/var/lib/pgadmin
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-responwarga}:${DB_PASSWORD:-responwarga}@db:5432/${DB_NAME:-responwarga}
+      PORT: 3535
+    ports:
+      - "3535:3535"
+    depends_on:
+      db:
+        condition: service_healthy

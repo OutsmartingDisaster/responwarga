@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import EmergencyMarkers from './map/EmergencyMarkers';
 import ContributionMarkers from './map/ContributionMarkers';
 import { resetPositionCounts } from './map/MarkerUtils';
+import { DARK_BASEMAP } from '@/lib/map/config';
 
 type FilterType = 'all' | 'emergency' | 'contribution';
 type EmergencyType = 'all' | 'evacuation' | 'food_water' | 'medical' | 'other' | 'none';
@@ -45,7 +46,14 @@ const MapLeaflet = ({
   contributionType = 'all',
   emergencyReportsData = null
 }: MapLeafletProps) => {
-  
+  const [isClient, setIsClient] = useState(false);
+
+  // All hooks must be called unconditionally before any early return
+  useEffect(() => {
+    setIsClient(true);
+    return () => setIsClient(false);
+  }, []);
+
   // Set up Leaflet configuration and styles on component mount
   useEffect(() => {
     // Fix Leaflet default icon issues
@@ -60,6 +68,9 @@ const MapLeaflet = ({
       });
     }
   }, []);
+
+  // Early return AFTER all hooks have been called
+  if (!isClient) return null;
 
   /**
    * Format a date string to a localized format
@@ -110,12 +121,12 @@ const MapLeaflet = ({
       className={className}
       style={{ height: '100%', width: '100%' }}
     >
-      {/* Dark theme map tiles from CartoDB */}
+      {/* Dark grey basemap - no API key needed */}
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        subdomains="abcd"
-        maxZoom={19}
+        attribution={DARK_BASEMAP.attribution}
+        url={DARK_BASEMAP.url}
+        subdomains={DARK_BASEMAP.subdomains}
+        maxZoom={DARK_BASEMAP.maxZoom}
       />
       <ZoomControl position="topright" />
 

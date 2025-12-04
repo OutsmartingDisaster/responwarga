@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createApiClient } from '@/lib/api-client';
 import { toast } from 'react-hot-toast';
 import dynamic from 'next/dynamic';
+import ConfirmationModal from '@/app/components/ConfirmationModal';
 
 export default function UserPolicyEditor() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [policies, setPolicies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -16,6 +17,10 @@ export default function UserPolicyEditor() {
   const [editContent, setEditContent] = useState('');
   const [editTitle, setEditTitle] = useState('');
 
+  // State for delete confirmation modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [policyToDelete, setPolicyToDelete] = useState<string | null>(null);
+
   useEffect(() => {
     fetchPolicies();
   }, []);
@@ -24,14 +29,14 @@ export default function UserPolicyEditor() {
     try {
       setLoading(true);
       setError(null);
-      
-      const { data, error } = await supabase
+
+      const { data, error } = await api
         .from('user_policies')
         .select('*')
         .order('updated_at', { ascending: false });
-        
+
       if (error) throw error;
-      
+
       setPolicies(data || []);
     } catch (err: any) {
       console.error('Error fetching policies:', err);
@@ -49,13 +54,13 @@ export default function UserPolicyEditor() {
 
   const handleSave = async () => {
     if (!editingPolicy) return;
-    
+
     try {
       setSaving(true);
       setError(null);
       setSuccess(null);
-      
-      const { error } = await supabase
+
+      const { error } = await api
         .from('user_policies')
         .update({
           title: editTitle,
@@ -63,12 +68,12 @@ export default function UserPolicyEditor() {
           updated_at: new Date().toISOString()
         })
         .eq('id', editingPolicy.id);
-        
+
       if (error) throw error;
-      
+
       setSuccess('Policy updated successfully');
       fetchPolicies();
-      
+
       // Reset form after short delay
       setTimeout(() => {
         setSuccess(null);
@@ -86,17 +91,17 @@ export default function UserPolicyEditor() {
       setSaving(true);
       setError(null);
       setSuccess(null);
-      
-      const { error } = await supabase
+
+      const { error } = await api
         .from('user_policies')
         .insert({
           title: 'New Policy',
           content: '<h2>New User Policy</h2><p>Edit this policy content.</p>',
           is_active: false
         });
-        
+
       if (error) throw error;
-      
+
       setSuccess('New policy created');
       fetchPolicies();
     } catch (err: any) {
@@ -109,13 +114,13 @@ export default function UserPolicyEditor() {
 
   const togglePolicyStatus = async (id: string, currentStatus: boolean) => {
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('user_policies')
         .update({ is_active: !currentStatus })
         .eq('id', id);
-        
+
       if (error) throw error;
-      
+
       fetchPolicies();
     } catch (err: any) {
       console.error('Error toggling policy status:', err);
@@ -123,28 +128,35 @@ export default function UserPolicyEditor() {
     }
   };
 
-  const deletePolicy = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this policy?')) return;
-    
+  const confirmDeletePolicy = async () => {
+    if (!policyToDelete) return;
+
     try {
-      const { error } = await supabase
+      const { error } = await api
         .from('user_policies')
         .delete()
-        .eq('id', id);
-        
+        .eq('id', policyToDelete);
+
       if (error) throw error;
-      
+
       fetchPolicies();
-      
-      if (editingPolicy?.id === id) {
+
+      if (editingPolicy?.id === policyToDelete) {
         setEditingPolicy(null);
         setEditTitle('');
         setEditContent('');
       }
+      toast.success('Policy deleted successfully');
     } catch (err: any) {
       console.error('Error deleting policy:', err);
       setError('Failed to delete policy');
+      toast.error('Failed to delete policy');
     }
+  };
+
+  const handleDeleteClick = (id: string) => {
+    setPolicyToDelete(id);
+    setIsDeleteModalOpen(true);
   };
 
   return (
@@ -209,7 +221,7 @@ export default function UserPolicyEditor() {
                             </svg>
                           </button>
                           <button
-                            onClick={() => deletePolicy(policy.id)}
+                            onClick={() => handleDeleteClick(policy.id)}
                             className="p-1 text-red-400 hover:text-red-300"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -231,7 +243,7 @@ export default function UserPolicyEditor() {
               {editingPolicy ? (
                 <div className="bg-zinc-700 p-4 rounded-lg">
                   <h3 className="font-medium text-lg mb-4 text-white">Edit Policy</h3>
-                  
+
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-zinc-300 mb-1">
                       Title
@@ -243,7 +255,7 @@ export default function UserPolicyEditor() {
                       className="w-full p-2 bg-zinc-800 border border-zinc-600 rounded-md text-white"
                     />
                   </div>
-                  
+
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-zinc-300 mb-1">
                       Content (HTML)
@@ -255,7 +267,7 @@ export default function UserPolicyEditor() {
                       className="w-full p-2 bg-zinc-800 border border-zinc-600 rounded-md text-white font-mono text-sm"
                     />
                   </div>
-                  
+
                   <div className="mt-4 flex justify-end space-x-3">
                     <button
                       onClick={() => {
@@ -293,6 +305,15 @@ export default function UserPolicyEditor() {
           </div>
         )}
       </div>
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDeletePolicy}
+        title="Delete Policy"
+        message="Are you sure you want to delete this policy? This action cannot be undone."
+        confirmText="Delete"
+        isDangerous={true}
+      />
     </div>
   );
-} 
+}

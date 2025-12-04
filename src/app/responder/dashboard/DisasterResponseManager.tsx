@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createClient } from "@/../lib/supabase/client";
+import { createApiClient } from "@/lib/api-client";
 
 export default function DisasterResponseManager() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [responses, setResponses] = useState<any[]>([]);
   const [form, setForm] = useState<any>({
     name: "",
@@ -26,17 +26,17 @@ export default function DisasterResponseManager() {
     setLoading(true);
     setError(null);
     try {
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("User not authenticated");
       // Get current user's organization
-      const { data: profile } = await supabase
+      const { data: profile } = await api
         .from("profiles")
         .select("organization_id")
         .eq("user_id", user.id)
         .single();
       if (!profile?.organization_id) throw new Error("No organization assigned");
       // Fetch disaster responses for this org
-      const { data, error: fetchError } = await supabase
+      const { data, error: fetchError } = await api
         .from("disaster_responses")
         .select("*")
         .eq("organization_id", profile.organization_id)
@@ -82,9 +82,9 @@ export default function DisasterResponseManager() {
     setError(null);
     setSuccess(null);
     try {
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("User not authenticated");
-      const { data: profile } = await supabase
+      const { data: profile } = await api
         .from("profiles")
         .select("organization_id")
         .eq("user_id", user.id)
@@ -92,7 +92,7 @@ export default function DisasterResponseManager() {
       if (!profile?.organization_id) throw new Error("No organization assigned");
       if (editingId) {
         // Update
-        const { error: updateError } = await supabase
+        const { error: updateError } = await api
           .from("disaster_responses")
           .update({
             name: form.name,
@@ -106,7 +106,7 @@ export default function DisasterResponseManager() {
         setSuccess("Disaster response updated.");
       } else {
         // Insert
-        const { error: insertError } = await supabase
+        const { error: insertError } = await api
           .from("disaster_responses")
           .insert([
             {
@@ -135,7 +135,7 @@ export default function DisasterResponseManager() {
     setError(null);
     setSuccess(null);
     try {
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await api
         .from("disaster_responses")
         .delete()
         .eq("id", id);

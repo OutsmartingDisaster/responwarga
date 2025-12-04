@@ -1,206 +1,169 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSupabase } from "@/contexts/SupabaseClientProvider";
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { User, Mail, Lock, UserPlus, LogIn } from 'lucide-react'
+import { AuthHeader, FormInput, RoleSelector, AuthMessage, SubmitButton, type UserRole } from '@/components/auth'
+import { registerUser, loginUser } from '@/lib/auth/api'
+import { getRegistrationRedirect, getLoginRedirect } from '@/lib/auth/redirect'
 
 export default function MasukPage() {
-  const router = useRouter();
-  const supabase = useSupabase();
-  const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [isRegister, setIsRegister] = useState(false);
-  const [role, setRole] = useState<'responder' | 'org_admin'>('responder');
+  const router = useRouter()
+  const [isRegister, setIsRegister] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  // Form state
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [role, setRole] = useState<UserRole>('org_admin')
+
+  const validateForm = (): string | null => {
+    if (isRegister) {
+      if (password !== confirmPassword) return 'Kata sandi tidak cocok.'
+      if (password.length < 6) return 'Kata sandi minimal 6 karakter.'
+    }
+    return null
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
 
-    if (!supabase) {
-      setError("Supabase client is not available. Please try again shortly.");
-      setLoading(false);
-      return;
+    const validationError = validateForm()
+    if (validationError) {
+      setError(validationError)
+      setLoading(false)
+      return
     }
 
     if (isRegister) {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            username,
-            role: role,
-          },
-        },
-      });
-      if (error) {
-        setError(error.message);
-      } else {
-        const user = (await supabase.auth.getUser()).data.user;
-        if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('organization_id')
-            .eq('user_id', user.id)
-            .single();
-          if (profile?.organization_id) {
-            const { data: orgData } = await supabase
-              .from('organizations')
-              .select('slug')
-              .eq('id', profile.organization_id)
-              .single();
-            if (orgData?.slug) {
-              console.log(`[Login Debug] Responder User: ${user.id}, Org ID: ${profile.organization_id}, Found Slug: ${orgData.slug}, Redirecting...`);
-              router.push(`/responder/${orgData.slug}/dashboard`);
-            } else {
-              console.error(`[Login Debug] Responder User: ${user.id}, Org ID: ${profile.organization_id}, Slug NOT FOUND! Setting error.`);
-              setError('Organisasi tidak ditemukan.');
-            }
-          } else {
-            setError('Akun belum terhubung ke organisasi.');
-          }
-        } else {
-          setError('Gagal mendapatkan data pengguna.');
-        }
+      const result = await registerUser({ email, password, name, role })
+      if (!result.success) {
+        setError(result.error || 'Pendaftaran gagal')
+        setLoading(false)
+        return
+      }
+
+      if (result.user) {
+        const redirect = await getRegistrationRedirect(result.user)
+        if (redirect.message) setSuccess(redirect.message)
+        setTimeout(() => router.push(redirect.path), redirect.delay || 0)
       }
     } else {
-      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email: username, password });
+      const result = await loginUser({ email, password })
+      if (!result.success) {
+        setError(result.error || 'Login gagal')
+        setLoading(false)
+        return
+      }
 
-      if (loginError) {
-        setError(loginError.message);
-      } else if (loginData.user) {
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('role, organization_id')
-          .eq('user_id', loginData.user.id)
-          .single();
-
-        if (profileError) {
-          setError('Failed to fetch user profile.');
-        } else if (profile) {
-          if (profile.role === 'org_admin') {
-            if (profile.organization_id) {
-              const { data: orgData } = await supabase
-                .from('organizations')
-                .select('slug')
-                .eq('id', profile.organization_id)
-                .single();
-              if (orgData?.slug) {
-                console.log(`[Login Debug] Admin User: ${loginData.user.id}, Org ID: ${profile.organization_id}, Found Slug: ${orgData.slug}, Redirecting...`);
-                router.push(`/responder/${orgData.slug}/dashboard`);
-              } else {
-                console.warn(`[Login Debug] Admin User: ${loginData.user.id}, Org ID: ${profile.organization_id}, Slug NOT FOUND! Redirecting to onboarding.`);
-                router.push('/onboarding/organization');
-              }
-            } else {
-              console.log(`[Login Debug] Admin User: ${loginData.user.id}, No Org ID found. Redirecting to onboarding.`);
-              router.push('/onboarding/organization');
-            }
-          } else {
-            if (profile.organization_id) {
-              const { data: orgData } = await supabase
-                .from('organizations')
-                .select('slug')
-                .eq('id', profile.organization_id)
-                .single();
-              if (orgData?.slug) {
-                console.log(`[Login Debug] Responder User: ${loginData.user.id}, Org ID: ${profile.organization_id}, Found Slug: ${orgData.slug}, Redirecting...`);
-                router.push(`/responder/${orgData.slug}/dashboard`);
-              } else {
-                console.error(`[Login Debug] Responder User: ${loginData.user.id}, Org ID: ${profile.organization_id}, Slug NOT FOUND! Setting error.`);
-                setError('Organisasi tidak ditemukan.');
-              }
-            } else {
-              console.error(`[Login Debug] Responder User: ${loginData.user.id}, Org ID: null. Setting error.`);
-              setError('Akun belum terhubung ke organisasi.');
-            }
-          }
-        } else {
-          console.error(`[Login Debug] User: ${loginData.user.id}, Profile NOT FOUND! Setting error.`);
-          setError('User profile not found.');
-        }
+      if (result.user) {
+        const redirect = await getLoginRedirect(result.user)
+        router.push(redirect.path)
       }
     }
-    setLoading(false);
-  };
+
+    setLoading(false)
+  }
+
+  const toggleMode = () => {
+    setIsRegister(!isRegister)
+    setError(null)
+    setSuccess(null)
+  }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-900 text-white p-4">
-      <h1 className="text-2xl font-bold mb-4">{isRegister ? 'Daftar Akun' : 'Masuk'}</h1>
-      <form className="space-y-4 w-full max-w-sm" onSubmit={handleSubmit}>
-        <input
-          type={isRegister ? "text" : "email"}
-          placeholder={isRegister ? "Username" : "Email"}
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-          className="w-full p-2 rounded bg-zinc-800 border border-zinc-600"
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 text-white p-4">
+      <div className="w-full max-w-md">
+        <AuthHeader
+          icon={isRegister ? UserPlus : LogIn}
+          title={isRegister ? 'Daftar Akun' : 'Masuk'}
+          subtitle={isRegister
+            ? 'Buat akun baru untuk bergabung dengan Respon Warga'
+            : 'Masuk ke akun Anda untuk melanjutkan'}
         />
-        {isRegister && (
-          <>
-            <input
+
+        <div className="bg-zinc-800/50 backdrop-blur-sm border border-zinc-700 rounded-xl p-6 shadow-xl">
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            {isRegister && (
+              <FormInput
+                label="Nama Lengkap"
+                type="text"
+                placeholder="Masukkan nama lengkap"
+                value={name}
+                onChange={setName}
+                required
+                icon={User}
+              />
+            )}
+
+            <FormInput
+              label="Email"
               type="email"
-              placeholder="Email"
+              placeholder="nama@email.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={setEmail}
               required
-              className="w-full p-2 rounded bg-zinc-800 border border-zinc-600"
+              icon={Mail}
             />
-            <div className="flex items-center space-x-4">
-              <label className="text-zinc-400">Daftar sebagai:</label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="role"
-                  value="responder"
-                  checked={role === 'responder'}
-                  onChange={() => setRole('responder')}
-                  className="mr-1"
-                />
-                Responder
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="role"
-                  value="org_admin"
-                  checked={role === 'org_admin'}
-                  onChange={() => setRole('org_admin')}
-                  className="mr-1"
-                />
-                Admin Organisasi
-              </label>
-            </div>
-          </>
-        )}
-        <input
-          type="password"
-          placeholder="Kata Sandi"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="w-full p-2 rounded bg-zinc-800 border border-zinc-600"
-        />
-        {error && <div className="text-red-400">{error}</div>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full p-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? 'Memproses...' : isRegister ? 'Daftar' : 'Masuk'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsRegister(!isRegister)}
-          className="w-full p-2 bg-zinc-700 rounded hover:bg-zinc-600 mt-2"
-        >
-          {isRegister ? 'Sudah punya akun? Masuk' : 'Belum punya akun? Daftar'}
-        </button>
-      </form>
+
+            {isRegister && <RoleSelector value={role} onChange={setRole} />}
+
+            <FormInput
+              label="Kata Sandi"
+              type="password"
+              placeholder="Masukkan kata sandi"
+              value={password}
+              onChange={setPassword}
+              required
+              minLength={6}
+              icon={Lock}
+            />
+
+            {isRegister && (
+              <FormInput
+                label="Konfirmasi Kata Sandi"
+                type="password"
+                placeholder="Ulangi kata sandi"
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                required
+                minLength={6}
+                icon={Lock}
+              />
+            )}
+
+            {error && <AuthMessage type="error" message={error} />}
+            {success && <AuthMessage type="success" message={success} />}
+
+            <SubmitButton
+              loading={loading}
+              loadingText="Memproses..."
+              icon={isRegister ? UserPlus : LogIn}
+              text={isRegister ? 'Daftar' : 'Masuk'}
+            />
+          </form>
+
+          <div className="mt-6 pt-6 border-t border-zinc-700 text-center">
+            <p className="text-zinc-400">
+              {isRegister ? 'Sudah punya akun?' : 'Belum punya akun?'}
+            </p>
+            <button
+              type="button"
+              onClick={toggleMode}
+              className="mt-2 text-blue-400 hover:text-blue-300 font-medium transition-colors"
+            >
+              {isRegister ? 'Masuk di sini' : 'Daftar sekarang'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
-  );
+  )
 }

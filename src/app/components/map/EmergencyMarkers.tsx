@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react';
 import { Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
-import { markerIcons } from './MarkerIcons';
+import { getMarkerIcon } from './MarkerIcons';
 import { EmergencyMarker } from './types';
 import MarkerPopup from './MarkerPopup';
-import { supabase } from '@/lib/supabase';
 import { getOffsetPosition, resetPositionCounts } from './MarkerUtils';
 
 // Define the radius in meters (e.g., 15km)
@@ -22,7 +21,7 @@ interface EmergencyMarkersProps {
 
 /**
  * Component that displays emergency report markers on the map
- * Fetches data from Supabase and displays it as individual markers
+ * Receives data via props and displays it as individual markers
  * 
  * @param formatDate - Function to format date strings for display
  */
@@ -37,35 +36,38 @@ export default function EmergencyMarkers({ formatDate, filterType = 'all', repor
     setLoading(true);
     setError(null);
     if (reportsData) {
-        // Directly format the data passed via props
-        const formattedData: EmergencyMarker[] = reportsData.map((item: any) => ({
-            id: item.id,
-            latitude: item.latitude,
-            longitude: item.longitude,
-            full_name: item.full_name,
-            description: item.description,
-            assistance_type: item.assistance_type || 'none',
-            status: item.status || 'needs_verification',
-            photo_url: item.photo_url,
-            created_at: item.created_at,
-            assignee_name: item.assignee?.name || null, // Assuming assignee relationship might still be relevant if fetched in parent
-            assignee_org_name: item.organization?.org_name || null 
-        }));
-        console.log('Formatted emergency markers from props:', formattedData);
-        setMarkers(formattedData);
+      // Directly format the data passed via props
+      const formattedData: EmergencyMarker[] = reportsData.map((item: any) => ({
+        id: item.id,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        full_name: item.full_name,
+        description: item.description,
+        assistance_type: item.assistance_type || 'none',
+        status: item.status || 'needs_verification',
+        photo_url: item.photo_url,
+        created_at: item.created_at,
+        assignee_name: item.assignee?.name || null, // Assuming assignee relationship might still be relevant if fetched in parent
+        assignee_org_name: item.organization?.org_name || null
+      }));
+      console.log('Formatted emergency markers from props:', formattedData);
+      setMarkers(formattedData);
     } else {
-        setMarkers([]); // Clear markers if no data is passed
-        console.log('No reportsData prop provided.');
+      setMarkers([]); // Clear markers if no data is passed
+      console.log('No reportsData prop provided.');
     }
     setLoading(false);
   }, [reportsData]); // Re-run effect if reportsData prop changes
 
   // For debugging
   console.log('Rendering emergency markers, count:', markers.length);
-  
+
+  const emergencyIcon = getMarkerIcon('emergency');
+
   // Don't render anything while loading or if there's an error
   if (loading) return null;
   if (error) return null;
+  if (!emergencyIcon) return null;
 
   // Reset position tracking before rendering markers
   // resetPositionCounts();
@@ -84,7 +86,7 @@ export default function EmergencyMarkers({ formatDate, filterType = 'all', repor
       status: 'active',
       created_at: new Date().toISOString()
     };
-    
+
     // Add a second test marker at exactly the same coordinates to demonstrate offset
     const testMarker2: EmergencyMarker = {
       id: 'test-emergency-2',
@@ -96,13 +98,13 @@ export default function EmergencyMarkers({ formatDate, filterType = 'all', repor
       status: 'active',
       created_at: new Date().toISOString()
     };
-    
+
     return (
       <>
         <Marker
           key="test-emergency-marker-1"
           position={getOffsetPosition(-6.21, 106.85)}
-          icon={markerIcons.emergency}
+          icon={emergencyIcon}
         >
           <Popup className="dark-popup">
             <MarkerPopup marker={testMarker} formatDate={formatDate} />
@@ -111,7 +113,7 @@ export default function EmergencyMarkers({ formatDate, filterType = 'all', repor
         <Marker
           key="test-emergency-marker-2"
           position={getOffsetPosition(-6.21, 106.85)}
-          icon={markerIcons.emergency}
+          icon={emergencyIcon}
         >
           <Popup className="dark-popup">
             <MarkerPopup marker={testMarker2} formatDate={formatDate} />
@@ -128,12 +130,12 @@ export default function EmergencyMarkers({ formatDate, filterType = 'all', repor
         // Get position with offset if necessary
         console.log('Processing marker:', marker);
         const position = getOffsetPosition(marker.latitude, marker.longitude);
-        
+
         return (
           <Marker
             key={marker.id}
             position={position}
-            icon={markerIcons.emergency}
+            icon={emergencyIcon}
           >
             <Popup className="dark-popup">
               <MarkerPopup marker={marker} formatDate={formatDate} />

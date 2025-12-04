@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -45,7 +44,6 @@ interface Contribution {
 }
 
 export default function Statistics() {
-  const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalEmergencies: 0,
@@ -67,21 +65,49 @@ export default function Statistics() {
     try {
       setLoading(true);
 
-      // Fetch emergency reports
-      const { data: emergencies, error: emergencyError } = await supabase
-      .from('emergency_reports')
-        .select('id, assistance_type, status, created_at')
-        .order('created_at', { ascending: true });
+      // Fetch emergency reports using the data API
+      const emergenciesResponse = await fetch('/api/data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'select',
+          table: 'emergency_reports',
+          columns: 'id, assistance_type, status, created_at',
+          order: [{ column: 'created_at', ascending: true }]
+        })
+      });
 
-      if (emergencyError) throw emergencyError;
+      const emergenciesResult = await emergenciesResponse.json();
 
-      // Fetch contributions
-      const { data: contributions, error: contributionError } = await supabase
-      .from('contributions')
-        .select('id, contribution_type, created_at')
-        .order('created_at', { ascending: true });
+      if (!emergenciesResponse.ok) {
+        throw new Error(emergenciesResult.error || 'Failed to fetch emergency reports');
+      }
 
-      if (contributionError) throw contributionError;
+      const emergencies = Array.isArray(emergenciesResult.data) ? emergenciesResult.data : [];
+
+      // Fetch contributions using the data API
+      const contributionsResponse = await fetch('/api/data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'select',
+          table: 'contributions',
+          columns: 'id, contribution_type, created_at',
+          order: [{ column: 'created_at', ascending: true }]
+        })
+      });
+
+      const contributionsResult = await contributionsResponse.json();
+
+      if (!contributionsResponse.ok) {
+        throw new Error(contributionsResult.error || 'Failed to fetch contributions');
+      }
+
+      const contributions = Array.isArray(contributionsResult.data) ? contributionsResult.data : [];
 
       // Process emergency data
       const emergencyTypes = {} as Record<string, number>;
@@ -91,10 +117,11 @@ export default function Statistics() {
         needs_verification: 0
       };
 
-      (emergencies as EmergencyReport[] || []).forEach(emergency => {
+      emergencies.forEach((emergency: EmergencyReport) => {
         // Count by type
-        emergencyTypes[emergency.assistance_type] = (emergencyTypes[emergency.assistance_type] || 0) + 1;
-        
+        const type = emergency.assistance_type || 'unknown';
+        emergencyTypes[type] = (emergencyTypes[type] || 0) + 1;
+
         // Count by status
         if (emergency.status === 'active') emergencyStatus.active++;
         else if (emergency.status === 'resolved') emergencyStatus.resolved++;
@@ -103,15 +130,16 @@ export default function Statistics() {
 
       // Process contribution data
       const contributionTypes = {} as Record<string, number>;
-      (contributions as Contribution[] || []).forEach(contribution => {
-        contributionTypes[contribution.contribution_type] = (contributionTypes[contribution.contribution_type] || 0) + 1;
+      contributions.forEach((contribution: Contribution) => {
+        const type = contribution.contribution_type || 'unknown';
+        contributionTypes[type] = (contributionTypes[type] || 0) + 1;
       });
 
       // Process daily data (last 7 days)
-      const dailyEmergencies = processDaily(emergencies || []);
-      const dailyContributions = processDaily(contributions || []);
+      const dailyEmergencies = processDaily(emergencies);
+      const dailyContributions = processDaily(contributions);
 
-    setStats({
+      setStats({
         totalEmergencies: emergencies?.length || 0,
         totalContributions: contributions?.length || 0,
         activeEmergencies: emergencyStatus.active,
@@ -137,9 +165,10 @@ export default function Statistics() {
     }).reverse();
 
     const dailyCounts = last7Days.map(date => {
-      const count = data.filter(item => 
-        item.created_at.split('T')[0] === date
-      ).length;
+      const count = data.filter(item => {
+        if (!item.created_at || typeof item.created_at !== 'string') return false;
+        return item.created_at.split('T')[0] === date;
+      }).length;
       return { date, count };
     });
 
@@ -186,7 +215,7 @@ export default function Statistics() {
             </div>
           </div>
           <p className="text-zinc-400 text-sm mt-2">Community contributions</p>
-      </div>
+        </div>
 
         <div className="bg-zinc-700/50 p-6 rounded-lg shadow-lg">
           <div className="flex items-center justify-between">
@@ -208,7 +237,7 @@ export default function Statistics() {
             <div>
               <p className="text-zinc-400 text-sm">Resolution Rate</p>
               <p className="text-2xl font-bold text-white">
-                {stats.totalEmergencies ? 
+                {stats.totalEmergencies ?
                   Math.round((stats.resolvedEmergencies / stats.totalEmergencies) * 100) : 0}%
               </p>
             </div>
@@ -216,7 +245,7 @@ export default function Statistics() {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-      </div>
+            </div>
           </div>
           <p className="text-zinc-400 text-sm mt-2">Cases resolved successfully</p>
         </div>
@@ -277,7 +306,7 @@ export default function Statistics() {
           <div className="aspect-w-16 aspect-h-9">
             <Doughnut
               data={{
-                labels: Object.keys(stats.emergencyTypes).map(type => 
+                labels: Object.keys(stats.emergencyTypes).map(type =>
                   type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' ')
                 ),
                 datasets: [{
@@ -309,7 +338,7 @@ export default function Statistics() {
           <h3 className="text-lg font-semibold text-white mb-4">Contribution Types</h3>
           <Bar
             data={{
-              labels: Object.keys(stats.contributionTypes).map(type => 
+              labels: Object.keys(stats.contributionTypes).map(type =>
                 type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' ')
               ),
               datasets: [{
@@ -340,7 +369,7 @@ export default function Statistics() {
               }
             }}
           />
-      </div>
+        </div>
 
         {/* Emergency Status */}
         <div className="bg-zinc-700/50 p-6 rounded-lg shadow-lg">

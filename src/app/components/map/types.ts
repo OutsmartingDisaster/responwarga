@@ -14,6 +14,8 @@ export interface EmergencyMarker extends BaseMarker {
   status: 'needs_verification' | 'active' | 'resolved';
 }
 
+import React from 'react';
+
 export interface Facilities {
   food_water?: boolean;
   medical?: boolean;
@@ -38,7 +40,7 @@ export interface ContributionMarker extends BaseMarker {
 export interface MarkerPopupProps {
   formatDate: (dateString: string) => string;
   marker: EmergencyMarker | ContributionMarker;
-  renderFacilities?: (facilities: Facilities) => JSX.Element | null;
+  renderFacilities?: (facilities: Facilities) => React.ReactNode | null;
 }
 
 export interface EmergencyMarkersProps {
@@ -47,5 +49,5 @@ export interface EmergencyMarkersProps {
 
 export interface ContributionMarkersProps {
   formatDate: (dateString: string) => string;
-  renderFacilities: (facilities: Facilities) => JSX.Element | null;
+  renderFacilities: (facilities: Facilities) => React.ReactNode | null;
 }

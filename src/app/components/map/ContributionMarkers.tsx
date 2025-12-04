@@ -3,10 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
-import { markerIcons, getMarkerIcon } from './MarkerIcons';
+import { getMarkerIcon } from './MarkerIcons';
 import { ContributionMarker } from './types';
 import MarkerPopup from './MarkerPopup';
-import { createClient } from '@/lib/supabase/client';
 import { getOffsetPosition, resetPositionCounts } from './MarkerUtils';
 
 // Define the radius in meters (e.g., 15km)
@@ -23,62 +22,54 @@ interface ContributionMarkersProps {
 
 /**
  * Component that displays community contribution markers on the map
- * Fetches data from Supabase and displays it as individual markers
+ * Fetches data from PostgreSQL database and displays it as individual markers
  * 
  * @param formatDate - Function to format date strings for display
  * @param renderFacilities - Function to render facility information
  */
 export default function ContributionMarkers({ formatDate, renderFacilities, filterType = 'all', activeDisasterResponseId }: ContributionMarkersProps) {
-  const supabase = createClient();
   const [markers, setMarkers] = useState<ContributionMarker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch contributions and subscribe to realtime updates
+  // Fetch contributions
   useEffect(() => {
     console.log('Filter type changed:', filterType);
     fetchContributions();
-
-    // Supabase Realtime subscription
-    const channel = supabase
-      .channel('contributions_realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'contributions' },
-        (payload) => {
-          console.log('Realtime update:', payload);
-          fetchContributions();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [filterType]);
+    // Realtime subscription removed
+  }, [filterType, activeDisasterResponseId]);
 
   /**
-   * Fetch community contributions from Supabase database
+   * Fetch community contributions from PostgreSQL database
    * Transforms the data to match the ContributionMarker interface
    */
   const fetchContributions = async () => {
     try {
       setLoading(true);
       console.log('Fetching contributions with filter:', filterType);
-      
+
       let data;
 
       // Fetch contributions based on whether a specific disaster response ID is provided
       if (activeDisasterResponseId) {
         // 1. Fetch the disaster response location
-        const { data: responseData, error: responseError } = await supabase
-          .from('disaster_responses')
-          .select('latitude, longitude')
-          .eq('id', activeDisasterResponseId)
-          .single();
+        const responseLoc = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'select',
+            table: 'disaster_responses',
+            columns: 'latitude, longitude',
+            filters: [{ column: 'id', operator: 'eq', value: activeDisasterResponseId }],
+            single: true
+          })
+        });
 
-        if (responseError || !responseData || responseData.latitude == null || responseData.longitude == null) {
-          console.error('Error fetching disaster response location or location is null:', responseError);
+        const responseLocResult = await responseLoc.json();
+        const responseData = responseLocResult.data;
+
+        if (!responseLoc.ok || !responseData || responseData.latitude == null || responseData.longitude == null) {
+          console.error('Error fetching disaster response location:', responseLocResult.error);
           setError('Could not fetch active disaster response location.');
           setMarkers([]);
           setLoading(false);
@@ -88,42 +79,58 @@ export default function ContributionMarkers({ formatDate, renderFacilities, filt
         const { latitude: centerLat, longitude: centerLon } = responseData;
 
         // 2. Call the RPC function to get contributions within the radius
-        const { data: rpcData, error: rpcError } = await supabase.rpc('get_contributions_within_radius', {
-          center_lat: centerLat,
-          center_lon: centerLon,
-          radius_meters: GEOFENCE_RADIUS_METERS
+        const rpcResponse = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'rpc',
+            functionName: 'get_contributions_within_radius',
+            args: {
+              center_lat: centerLat,
+              center_lon: centerLon,
+              radius_meters: GEOFENCE_RADIUS_METERS
+            }
+          })
         });
-        
-        if (rpcError) {
-          console.error('Supabase RPC error (get_contributions_within_radius):', rpcError);
-          throw rpcError;
+
+        const rpcResult = await rpcResponse.json();
+
+        if (!rpcResponse.ok) {
+          console.error('RPC error (get_contributions_within_radius):', rpcResult.error);
+          throw new Error(rpcResult.error?.message || 'RPC failed');
         }
-        
-        data = rpcData; // Use the data returned by the RPC function
-        
+
+        data = rpcResult.data;
+
       } else {
         // Original logic: Fetch all or filter by type if no geofence ID is provided
-        let query = supabase
-          .from('contributions_public') // Use the public view
-          .select('*')
-          .order('created_at', { ascending: false });
-          
-        // Apply type filter if specified
+        const filters = [];
         if (filterType !== 'all') {
-          query = query.eq('contribution_type', filterType);
+          filters.push({ column: 'contribution_type', operator: 'eq', value: filterType });
         }
-        
-        const { data: queryData, error: queryError } = await query;
-        
-        if (queryError) {
-          console.error('Supabase query error:', queryError);
-          throw queryError;
+
+        const queryResponse = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'select',
+            table: 'contributions',
+            filters: filters,
+            order: [{ column: 'created_at', ascending: false }]
+          })
+        });
+
+        const queryResult = await queryResponse.json();
+
+        if (!queryResponse.ok) {
+          console.error('Database query error:', queryResult.error);
+          throw new Error(queryResult.error?.message || 'Query failed');
         }
-        data = queryData;
+        data = queryResult.data;
       }
 
       console.log('Contributions data (filtered/geofenced):', data);
-      
+
       if (!data || data.length === 0) {
         console.log('No contributions found for filter:', filterType);
         setMarkers([]);
@@ -171,7 +178,7 @@ export default function ContributionMarkers({ formatDate, renderFacilities, filt
     console.log('Still loading contributions...');
     return null;
   }
-  
+
   if (error) {
     console.log('Error rendering contributions:', error);
     return null;
@@ -180,7 +187,7 @@ export default function ContributionMarkers({ formatDate, renderFacilities, filt
   // Create test markers if no real markers exist
   if (markers.length === 0) {
     console.log('No real markers - adding test marker');
-    
+
     // Add a test marker at Jakarta center
     const testMarker: ContributionMarker = {
       id: 'test-1',
@@ -191,7 +198,7 @@ export default function ContributionMarkers({ formatDate, renderFacilities, filt
       contribution_type: 'shelter',
       created_at: new Date().toISOString()
     };
-    
+
     // Add another test marker at the same coordinates to demonstrate offset
     const testMarker2: ContributionMarker = {
       id: 'test-2',
@@ -202,13 +209,13 @@ export default function ContributionMarkers({ formatDate, renderFacilities, filt
       contribution_type: 'food_water',
       created_at: new Date().toISOString()
     };
-    
+
     return (
       <>
         <Marker
           key="test-marker-1"
           position={getOffsetPosition(-6.2088, 106.8456)}
-          icon={getMarkerIcon('shelter')}
+          icon={getMarkerIcon('shelter')!}
         >
           <Popup className="dark-popup">
             <MarkerPopup marker={testMarker} formatDate={formatDate} renderFacilities={renderFacilities} />
@@ -217,7 +224,7 @@ export default function ContributionMarkers({ formatDate, renderFacilities, filt
         <Marker
           key="test-marker-2"
           position={getOffsetPosition(-6.2088, 106.8456)}
-          icon={getMarkerIcon('food_water')}
+          icon={getMarkerIcon('food_water')!}
         >
           <Popup className="dark-popup">
             <MarkerPopup marker={testMarker2} formatDate={formatDate} renderFacilities={renderFacilities} />
@@ -233,12 +240,12 @@ export default function ContributionMarkers({ formatDate, renderFacilities, filt
       {markers.map((marker) => {
         // Get position with offset if necessary
         const position = getOffsetPosition(marker.latitude, marker.longitude);
-        
+
         return (
           <Marker
             key={marker.id}
             position={position}
-            icon={getMarkerIcon(marker.contribution_type)}
+            icon={getMarkerIcon(marker.contribution_type)!}
           >
             <Popup className="dark-popup">
               <MarkerPopup marker={marker} formatDate={formatDate} renderFacilities={renderFacilities} />

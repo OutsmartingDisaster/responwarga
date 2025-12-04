@@ -1,20 +1,22 @@
 "use client";
-import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-
-// --- Import components for tabs ---
-import ResponderManagement from "./ResponderManagement"; // Assuming same directory or adjust path
-import ResponderProfile from "./ResponderProfile"; // Assuming same directory or adjust path
+import { useEffect, useState, useRef } from "react";
+import { createApiClient } from "@/lib/api-client";
+import { Upload, Building2 } from "lucide-react";
+import ResponderManagement from "./ResponderManagement";
+import ResponderProfile from "./ResponderProfile";
 
 export default function OrganizationProfile() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [org, setOrg] = useState<any>(null);
   const [form, setForm] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('profilOrganisasi'); // Add state for active tab
+  const [activeTab, setActiveTab] = useState('profilOrganisasi');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Only fetch org data if the org profile tab is active initially or becomes active
@@ -31,9 +33,9 @@ export default function OrganizationProfile() {
     setError(null);
     try {
       // Get current user profile
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("User not authenticated");
-      const { data: profile } = await supabase
+      const { data: profile } = await api
         .from("profiles")
         .select("organization_id")
         .eq("user_id", user.id)
@@ -41,7 +43,7 @@ export default function OrganizationProfile() {
       if (!profile?.organization_id) throw new Error("No organization assigned");
 
       // Get organization
-      const { data: orgData, error: orgError } = await supabase
+      const { data: orgData, error: orgError } = await api
         .from("organizations")
         .select("*")
         .eq("id", profile.organization_id)
@@ -49,11 +51,27 @@ export default function OrganizationProfile() {
       if (orgError) throw orgError;
       setOrg(orgData);
       setForm(orgData);
+      setLogoPreview(orgData?.logo_url || null);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setError("File terlalu besar. Maksimal 2MB.");
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
+      setError("Format tidak didukung. Gunakan PNG atau JPG.");
+      return;
+    }
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -68,14 +86,32 @@ export default function OrganizationProfile() {
     setSuccess(null);
     try {
       const { slug, id, ...updateData } = form;
+      let logoUrl = form.logo_url;
 
-      const { error: updateError } = await supabase
+      // Upload logo if new file selected
+      if (logoFile) {
+        const ext = logoFile.name.split('.').pop();
+        const fileName = `logo_${id}_${Date.now()}.${ext}`;
+        const formData = new FormData();
+        formData.append('file', logoFile);
+        formData.append('bucket', 'organizations');
+        formData.append('path', fileName);
+
+        const uploadRes = await fetch('/api/uploads', { method: 'POST', body: formData });
+        if (!uploadRes.ok) throw new Error('Gagal mengunggah logo');
+        const { data: uploadData } = await uploadRes.json();
+        logoUrl = `/uploads/organizations/${uploadData.path}`;
+      }
+
+      const { error: updateError } = await api
         .from("organizations")
-        .update(updateData)
+        .update({ ...updateData, logo_url: logoUrl })
         .eq("id", id);
 
       if (updateError) throw updateError;
-      setSuccess("Organization profile updated successfully.");
+      setForm({ ...form, logo_url: logoUrl });
+      setLogoFile(null);
+      setSuccess("Profil organisasi berhasil disimpan.");
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -258,15 +294,30 @@ export default function OrganizationProfile() {
                     />
                   </div>
                   <div>
-                    <label className="block font-medium mb-1 text-zinc-200">URL Logo</label>
-                    <input
-                      type="text"
-                      name="logo_url"
-                      value={form.logo_url || ""}
-                      onChange={handleChange}
-                      className="w-full border border-zinc-700 bg-zinc-800 text-zinc-100 rounded px-3 py-2"
-                      placeholder="https://..."
-                    />
+                    <label className="block font-medium mb-1 text-zinc-200">Logo Organisasi</label>
+                    <div className="flex items-center gap-4">
+                      <div className="w-24 h-24 bg-zinc-700 rounded-lg flex items-center justify-center overflow-hidden border border-zinc-600">
+                        {logoPreview ? (
+                          <img src={logoPreview} alt="Logo" className="w-full h-full object-cover" />
+                        ) : (
+                          <Building2 className="w-10 h-10 text-zinc-500" />
+                        )}
+                      </div>
+                      <div>
+                        <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition text-sm">
+                          <Upload className="w-4 h-4" />
+                          <span>Unggah Logo</span>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg"
+                            onChange={handleLogoChange}
+                            className="hidden"
+                          />
+                        </label>
+                        <p className="text-xs text-zinc-400 mt-2">PNG atau JPG, maks 2MB</p>
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <label className="block font-medium mb-1 text-zinc-200">Nama Kontak Utama</label>

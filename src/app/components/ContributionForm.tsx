@@ -1,11 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useSupabase } from '@/contexts/SupabaseClientProvider';
-import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import LocationPicker from './shared/LocationPicker';
-import PhotoUpload from './shared/PhotoUpload';
+import dynamic from 'next/dynamic';
+const MiniMapPicker = dynamic(() => import('./MiniMapPicker'), { ssr: false });
 
 // Initial form state - moved outside to prevent recreation
 const initialFormState = {
@@ -29,15 +27,6 @@ const initialFormState = {
   agreeToTerms: false,
 };
 
-// Facility options - moved outside to prevent recreation
-const facilityOptions = {
-  food_water: 'Makanan & Air',
-  medical: 'Obat-obatan',
-  clothing: 'Pakaian',
-  electricity: 'Listrik',
-  internet: 'Internet',
-} as const;
-
 type ContributionType = 'shelter' | 'food_water' | 'medical' | 'clothing';
 
 interface Facility {
@@ -54,11 +43,9 @@ interface ContributionFormProps {
 }
 
 const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess }) => {
-  const router = useRouter();
-  const supabase = useSupabase();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState<typeof initialFormState>(initialFormState);
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null); // compatible with MiniMapPicker
   const [address, setAddress] = useState<string>('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -96,64 +83,27 @@ const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess 
       setPhotoFile(file);
       const url = URL.createObjectURL(file);
       setPhotoPreview(url);
-      
+
       // Cleanup URL when preview changes
       return () => URL.revokeObjectURL(url);
     }
   }, []);
 
   // Debounced location lookup
-  const handleGetLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by your browser');
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const coords = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
-        setLocation(coords);
-        setError(null);
-
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
-
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}&addressdetails=1`,
-            { signal: controller.signal }
-          );
-          
-          clearTimeout(timeoutId);
-          
-          if (!response.ok) throw new Error('Failed to fetch address');
-          
-          const data = await response.json();
-          
-          if (data.address) {
-            const addressParts = [
-              data.address.house_number,
-              data.address.road,
-              data.address.suburb,
-              data.address.city || data.address.town,
-              data.address.state
-            ].filter(Boolean);
-            
-            setAddress(addressParts.join(', '));
-          }
-        } catch (err) {
-          console.error('Error getting address:', err);
-          // Don't set error for address lookup failure
-        }
-      },
-      (err) => {
-        setError(`Error getting location: ${err.message}`);
+  // Reverse geocode coordinates to address
+  const reverseGeocode = async (lat: number, lng: number) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
+      );
+      const data = await response.json();
+      if (data.display_name) {
+        setAddress(data.display_name);
       }
-    );
-  }, []);
+    } catch {
+      // Silent fail, allow manual address entry
+    }
+  };
 
   // Memoized form validation
   const validateForm = useCallback(() => {
@@ -163,7 +113,7 @@ const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess 
     }
 
     if (!location) {
-      setError('Lokasi diperlukan. Silakan bagikan lokasi Anda.');
+      setError('Lokasi diperlukan. Silakan pilih lokasi pada peta.');
       return false;
     }
 
@@ -175,7 +125,7 @@ const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess 
     e.preventDefault();
 
     if (!location) {
-      toast.error("Lokasi kontribusi wajib diisi.");
+      toast.error("Lokasi kontribusi wajib diisi. Silakan pilih lokasi pada peta.");
       return;
     }
 
@@ -187,18 +137,23 @@ const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess 
     try {
       let photoPublicUrl: string | null = null;
       if (photoFile) {
-        const fileName = `contributions/${Date.now()}_${photoFile.name}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('contribution-photos')
-          .upload(fileName, photoFile);
+        const fileName = `${Date.now()}_${photoFile.name}`;
+        const formData = new FormData();
+        formData.append('file', photoFile);
+        formData.append('bucket', 'contribution-photos');
+        formData.append('path', fileName);
 
-        if (uploadError) throw uploadError;
+        const uploadResponse = await fetch('/api/uploads', {
+          method: 'POST',
+          body: formData,
+        });
 
-        const { data: urlData } = supabase.storage
-          .from('contribution-photos')
-          .getPublicUrl(fileName);
-        
-        photoPublicUrl = urlData?.publicUrl || null;
+        if (!uploadResponse.ok) {
+          throw new Error('Gagal mengunggah foto');
+        }
+
+        // Assuming the upload API saves to public/uploads, the URL is accessible via /uploads/...
+        photoPublicUrl = `/uploads/contribution-photos/${fileName}`;
       }
 
       const contributionData = {
@@ -209,27 +164,38 @@ const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess 
         description: formData.description,
         contribution_type: formData.contributionType,
         capacity: formData.contributionType === 'shelter' ? formData.capacity : null,
+        latitude: location.lat,
+        longitude: location.lng,
         facilities: formData.contributionType === 'shelter' ? formData.facilities : null,
         quantity: ['food_water', 'medical', 'clothing'].includes(formData.contributionType) ? formData.quantity : null,
         unit: ['food_water', 'medical', 'clothing'].includes(formData.contributionType) ? formData.unit : null,
-        latitude: location.lat,
-        longitude: location.lng,
         photo_url: photoPublicUrl,
-        status: 'pending_review',
+        status: 'menunggu',
         show_contact_info: formData.showContactOnMap,
-        consent_statement: formData.agreeToTerms,
+        consent_statement: formData.agreeToTerms ? 'Saya setuju' : 'Tidak setuju',
       };
 
-      const { data, error } = await supabase
-        .from('contributions')
-        .insert([contributionData])
-        .select();
+      const response = await fetch('/api/data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'insert',
+          table: 'contributions',
+          values: contributionData
+        })
+      });
 
-      if (error) throw error;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error?.message || 'Gagal mengirim kontribusi');
+      }
 
       toast.success('Kontribusi berhasil dikirim!');
       onSuccess(location.lat, location.lng);
-      
+
       // Reset form after delay
       const timeoutId = setTimeout(() => {
         setFormData(initialFormState);
@@ -279,7 +245,6 @@ const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess 
 
     return () => {
       document.removeEventListener('keydown', handleEscape);
-      document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [onClose]);
 
@@ -295,321 +260,312 @@ const ContributionForm: React.FC<ContributionFormProps> = ({ onClose, onSuccess 
   ), []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
-      <div className="bg-zinc-800 rounded-lg shadow-xl w-full max-w-2xl modal-content">
-        <div className="p-6 max-h-[90vh] overflow-y-auto">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-semibold">Contribute</h2>
-            <button
-              onClick={onClose}
-              className="text-zinc-400 hover:text-zinc-300"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+    <>
+      <div className="p-6 sticky top-0 z-10 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
+        <h2 className="text-2xl font-semibold">Contribute</h2>
+        <button
+          onClick={onClose}
+          className="text-zinc-400 hover:text-zinc-300"
+        >
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <div className="p-6">
+        {success ? (
+          successContent
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="p-3 bg-red-900/50 border border-red-700 rounded text-white text-sm">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="contributionType" className="block text-sm font-medium text-zinc-300">
+                Jenis Kontribusi <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="contributionType"
+                name="contributionType"
+                required
+                value={formData.contributionType}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
+                <option value="">Pilih Jenis Kontribusi</option>
+                <option value="shelter">Shelter/Tempat Berlindung</option>
+                <option value="food_water">Makanan & Air</option>
+                <option value="medical">Obat-obatan</option>
+                <option value="clothing">Pakaian Kering</option>
+              </select>
+            </div>
 
-          {success ? (
-            successContent
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="fullName" className="block text-sm font-medium text-zinc-300">
+                Nama Lengkap <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="fullName"
+                name="fullName"
+                required
+                value={formData.fullName}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="phoneNumber" className="block text-sm font-medium text-zinc-300">
+                Nomor Telepon <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="tel"
+                id="phoneNumber"
+                name="phoneNumber"
+                required
+                value={formData.phoneNumber}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-zinc-300">
+                Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                required
+                value={formData.email}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-sm text-zinc-400">Kami butuh email kamu agar kami bisa mengirimkan form feedback. hal ini kami butuhkan untuk akuntabilitas performa respon.</p>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <label className="block text-sm font-medium text-zinc-300 mb-1">
+                Pilih Lokasi pada Peta <span className="text-red-500">*</span>
+              </label>
+              <MiniMapPicker
+                value={location}
+                onChange={coords => {
+                  setLocation(coords);
+                  reverseGeocode(coords.lat, coords.lng);
+                }}
+                height="240px"
+              />
               {error && (
-                <div className="p-3 bg-red-900/50 border border-red-700 rounded text-white text-sm">
-                  {error}
-                </div>
+                <div className="text-xs text-red-500 mt-1">{error}</div>
               )}
-              
-              <div>
-                <label htmlFor="contributionType" className="block text-sm font-medium text-zinc-300">
-                  Jenis Kontribusi <span className="text-red-500">*</span>
-                </label>
-                <select
-                  id="contributionType"
-                  name="contributionType"
-                  required
-                  value={formData.contributionType}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-                  <option value="">Pilih Jenis Kontribusi</option>
-                  <option value="shelter">Shelter/Tempat Berlindung</option>
-                  <option value="food_water">Makanan & Air</option>
-                  <option value="medical">Obat-obatan</option>
-                  <option value="clothing">Pakaian Kering</option>
-                </select>
-              </div>
+              <input
+                type="text"
+                id="address"
+                name="address"
+                required
+                value={address}
+                onChange={e => setAddress(e.target.value)}
+                className="mt-2 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                placeholder="Alamat hasil peta atau isi manual"
+              />
+            </div>
 
-              <div>
-                <label htmlFor="fullName" className="block text-sm font-medium text-zinc-300">
-                  Nama Lengkap <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  id="fullName"
-                  name="fullName"
-                  required
-                  value={formData.fullName}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="phoneNumber" className="block text-sm font-medium text-zinc-300">
-                  Nomor Telepon <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="tel"
-                  id="phoneNumber"
-                  name="phoneNumber"
-                  required
-                  value={formData.phoneNumber}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-zinc-300">
-                  Email <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  required
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-                <p className="mt-1 text-sm text-zinc-400">Kami butuh email kamu agar kami bisa mengirimkan form feedback. hal ini kami butuhkan untuk akuntabilitas performa respon.</p>
-              </div>
-              
-              <div>
-                <label htmlFor="address" className="block text-sm font-medium text-zinc-300">
-                  Alamat <span className="text-red-500">*</span>
-                </label>
-                <div className="flex gap-2">
+            {formData.contributionType === 'shelter' && (
+              <>
+                <div>
+                  <label htmlFor="capacity" className="block text-sm font-medium text-zinc-300">
+                    Kapasitas (Jumlah Orang) <span className="text-red-500">*</span>
+                  </label>
                   <input
-                    type="text"
-                    id="address"
-                    name="address"
+                    type="number"
+                    id="capacity"
+                    name="capacity"
                     required
-                    value={address}
+                    min="1"
+                    value={formData.capacity}
                     onChange={handleChange}
                     className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                   />
-                  <button
-                    type="button"
-                    onClick={handleGetLocation}
-                    className="mt-1 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-800"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </button>
                 </div>
-                <p className="mt-1 text-sm text-zinc-400">Lengkapi detail alamat secara manual dengan informasi seperti nomor rumah, gang, atau patokan terdekat agar tim respon dapat dengan mudah menemukan lokasi.</p>
-                {location && (
-                  <p className="mt-1 text-xs text-green-500">
-                    Lokasi ditemukan: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-                  </p>
-                )}
-              </div>
 
-              {formData.contributionType === 'shelter' && (
-                <>
-                  <div>
-                    <label htmlFor="capacity" className="block text-sm font-medium text-zinc-300">
-                      Kapasitas (Jumlah Orang) <span className="text-red-500">*</span>
-                    </label>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Fasilitas yang Tersedia <span className="text-red-500">*</span>
+                  </label>
+                  <div className="space-y-2">
+                    {Object.entries({
+                      food_water: 'Makanan & Air',
+                      medical: 'Obat-obatan',
+                      clothing: 'Pakaian',
+                      electricity: 'Listrik',
+                      internet: 'Internet',
+                    }).map(([key, label]) => (
+                      <div key={key} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id={key}
+                          name={key}
+                          checked={formData.facilities[key as keyof Facility]}
+                          onChange={handleFacilityChange}
+                          className="h-4 w-4 rounded border-zinc-600 text-blue-600 focus:ring-blue-500 bg-zinc-700"
+                        />
+                        <label htmlFor={key} className="ml-2 text-sm text-zinc-300">
+                          {label}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {['food_water', 'medical', 'clothing'].includes(formData.contributionType) && (
+              <>
+                <div>
+                  <label htmlFor="quantity" className="block text-sm font-medium text-zinc-300">
+                    Jumlah <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-2">
                     <input
                       type="number"
-                      id="capacity"
-                      name="capacity"
+                      id="quantity"
+                      name="quantity"
                       required
                       min="1"
-                      value={formData.capacity}
+                      value={formData.quantity}
                       onChange={handleChange}
                       className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     />
+                    <input
+                      type="text"
+                      id="unit"
+                      name="unit"
+                      placeholder="Satuan"
+                      required
+                      value={formData.unit}
+                      onChange={handleChange}
+                      className="mt-1 block w-32 rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    />
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-zinc-300 mb-2">
-                      Fasilitas yang Tersedia <span className="text-red-500">*</span>
-                    </label>
-                    <div className="space-y-2">
-                      {Object.entries({
-                        food_water: 'Makanan & Air',
-                        medical: 'Obat-obatan',
-                        clothing: 'Pakaian',
-                        electricity: 'Listrik',
-                        internet: 'Internet',
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center">
-                          <input
-                            type="checkbox"
-                            id={key}
-                            name={key}
-                            checked={formData.facilities[key as keyof Facility]}
-                            onChange={handleFacilityChange}
-                            className="h-4 w-4 rounded border-zinc-600 text-blue-600 focus:ring-blue-500 bg-zinc-700"
-                          />
-                          <label htmlFor={key} className="ml-2 text-sm text-zinc-300">
-                            {label}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {['food_water', 'medical', 'clothing'].includes(formData.contributionType) && (
-                <>
-                  <div>
-                    <label htmlFor="quantity" className="block text-sm font-medium text-zinc-300">
-                      Jumlah <span className="text-red-500">*</span>
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        id="quantity"
-                        name="quantity"
-                        required
-                        min="1"
-                        value={formData.quantity}
-                        onChange={handleChange}
-                        className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      />
-                      <input
-                        type="text"
-                        id="unit"
-                        name="unit"
-                        placeholder="Satuan"
-                        required
-                        value={formData.unit}
-                        onChange={handleChange}
-                        className="mt-1 block w-32 rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-              
-              <div>
-                <label htmlFor="photo" className="block text-sm font-medium text-zinc-300">
-                  Foto <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="file"
-                  id="photo"
-                  name="photo"
-                  accept="image/*"
-                  required
-                  onChange={handlePhotoChange}
-                  className="mt-1 block w-full text-sm text-zinc-300
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded-md file:border-0
-                    file:text-sm file:font-medium
-                    file:bg-blue-600 file:text-white
-                    hover:file:bg-blue-700"
-                />
-                {photoPreview && (
-                  <div className="mt-2">
-                    <img src={photoPreview} alt="Preview" className="h-32 w-auto object-cover rounded-md" />
-                  </div>
-                )}
-              </div>
-              
-              <div>
-                <label htmlFor="description" className="block text-sm font-medium text-zinc-300">
-                  Deskripsi <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  id="description"
-                  name="description"
-                  rows={3}
-                  required
-                  value={formData.description}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Berikan detail tambahan tentang kontribusi Anda..."
-                />
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="showContactOnMap"
-                    name="showContactOnMap"
-                    checked={formData.showContactOnMap}
-                    onChange={handleCheckboxChange}
-                    className="h-4 w-4 rounded border-zinc-600 text-blue-600 focus:ring-blue-500 bg-zinc-700"
-                  />
-                  <label htmlFor="showContactOnMap" className="ml-2 text-sm text-zinc-300">
-                    Tampilkan kontak saya di peta untuk penyintas yang membutuhkan bantuan
-                  </label>
                 </div>
-                {!formData.showContactOnMap && (
-                  <p className="text-sm text-zinc-400 italic">
-                    Jika tidak menampilkan kontak, bantuan Anda akan dikoordinasikan oleh relawan
-                  </p>
-                )}
-              </div>
+              </>
+            )}
 
+            <div>
+              <label htmlFor="photo" className="block text-sm font-medium text-zinc-300">
+                Foto <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="file"
+                id="photo"
+                name="photo"
+                accept="image/*"
+                required
+                onChange={handlePhotoChange}
+                className="mt-1 block w-full text-sm text-zinc-300
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-md file:border-0
+                  file:text-sm file:font-medium
+                  file:bg-blue-600 file:text-white
+                  hover:file:bg-blue-700"
+              />
+              {photoPreview && (
+                <div className="mt-2">
+                  <img src={photoPreview} alt="Preview" className="h-32 w-auto object-cover rounded-md" />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="description" className="block text-sm font-medium text-zinc-300">
+                Deskripsi <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                id="description"
+                name="description"
+                rows={3}
+                required
+                value={formData.description}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md bg-zinc-700 border-zinc-600 text-zinc-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                placeholder="Berikan detail tambahan tentang kontribusi Anda..."
+              />
+            </div>
+
+            <div className="space-y-4">
               <div className="flex items-center">
                 <input
                   type="checkbox"
-                  id="agreeToTerms"
-                  name="agreeToTerms"
-                  required
-                  checked={formData.agreeToTerms}
+                  id="showContactOnMap"
+                  name="showContactOnMap"
+                  checked={formData.showContactOnMap}
                   onChange={handleCheckboxChange}
                   className="h-4 w-4 rounded border-zinc-600 text-blue-600 focus:ring-blue-500 bg-zinc-700"
                 />
-                <label htmlFor="agreeToTerms" className="ml-2 text-sm text-zinc-300">
-                  Saya menyatakan bahwa kontribusi ini adalah nyata dan saya bertanggung jawab atas kebenarannya di hadapan hukum. <span className="text-red-500">*</span>
+                <label htmlFor="showContactOnMap" className="ml-2 text-sm text-zinc-300">
+                  Tampilkan kontak saya di peta untuk penyintas yang membutuhkan bantuan
                 </label>
               </div>
-              
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Mengirim...
-                    </>
-                  ) : 'Kirim Kontribusi'}
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
+              {!formData.showContactOnMap && (
+                <p className="text-sm text-zinc-400 italic">
+                  Jika tidak menampilkan kontak, bantuan Anda akan dikoordinasikan oleh relawan
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="agreeToTerms"
+                name="agreeToTerms"
+                required
+                checked={formData.agreeToTerms}
+                onChange={handleCheckboxChange}
+                className="h-4 w-4 rounded border-zinc-600 text-blue-600 focus:ring-blue-500 bg-zinc-700"
+              />
+              <label htmlFor="agreeToTerms" className="ml-2 text-sm text-zinc-300">
+                Saya menyatakan bahwa kontribusi ini adalah nyata dan saya bertanggung jawab atas kebenarannya di hadapan hukum. <span className="text-red-500">*</span>
+              </label>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Mengirim...
+                  </>
+                ) : 'Kirim Kontribusi'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
-      <div className="fixed inset-0 -z-10" onClick={onClose} />
-    </div>
+    </>
   );
 };
 

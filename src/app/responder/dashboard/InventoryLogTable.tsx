@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createApiClient } from "@/lib/api-client";
 
 export default function InventoryLogTable({ dailyLogId }: { dailyLogId: string }) {
-  const supabase = createClient();
+  const api = createApiClient();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export default function InventoryLogTable({ dailyLogId }: { dailyLogId: string }
     setLoading(true);
     setError(null);
     try {
-      const { data, error: logsError } = await supabase
+      const { data, error: logsError } = await api
         .from("inventory_logs")
         .select("*")
         .eq("daily_log_id", dailyLogId)
@@ -69,7 +69,7 @@ export default function InventoryLogTable({ dailyLogId }: { dailyLogId: string }
     try {
       if (editingId) {
         // Update
-        const { error: updateError } = await supabase
+        const { error: updateError } = await api
           .from("inventory_logs")
           .update({
             item_name: form.item_name,
@@ -83,7 +83,7 @@ export default function InventoryLogTable({ dailyLogId }: { dailyLogId: string }
         if (updateError) throw updateError;
       } else {
         // Insert
-        const { error: insertError } = await supabase
+        const { error: insertError } = await api
           .from("inventory_logs")
           .insert([
             {

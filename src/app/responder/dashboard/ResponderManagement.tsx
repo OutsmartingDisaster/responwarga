@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createApiClient } from "@/lib/api-client";
 
 export default function ResponderManagement() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [responders, setResponders] = useState<any[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
   const [form, setForm] = useState<any | null>(null);
@@ -28,9 +28,9 @@ export default function ResponderManagement() {
     setError(null);
     try {
       // Get current user profile
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("User not authenticated");
-      const { data: profile } = await supabase
+      const { data: profile } = await api
         .from("profiles")
         .select("organization_id")
         .eq("user_id", user.id)
@@ -38,7 +38,7 @@ export default function ResponderManagement() {
       if (!profile?.organization_id) throw new Error("No organization assigned");
 
       // Get all responders in the org (exclude org_admins)
-      const { data: users, error: usersError } = await supabase
+      const { data: users, error: usersError } = await api
         .from("profiles")
         .select("*")
         .eq("organization_id", profile.organization_id)
@@ -67,7 +67,7 @@ export default function ResponderManagement() {
 
   const fetchAssignments = async (profileId: number) => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from("team_assignments")
         .select("*")
         .eq("profile_id", profileId)
@@ -89,7 +89,7 @@ export default function ResponderManagement() {
     setError(null);
     setSuccess(null);
     try {
-      const { error: updateError } = await supabase
+      const { error: updateError } = await api
         .from("profiles")
         .update({
           name: form.name, // Use 'name'
@@ -125,9 +125,9 @@ export default function ResponderManagement() {
               setSuccess(null);
               try {
                 // Get current user profile for org_id
-                const user = (await supabase.auth.getUser()).data.user;
+                const user = (await api.auth.getUser()).data.user;
                 if (!user) throw new Error("Pengguna tidak terautentikasi");
-                const { data: profile } = await supabase
+                const { data: profile } = await api
                   .from("profiles")
                   .select("organization_id")
                   .eq("user_id", user.id)
@@ -135,7 +135,7 @@ export default function ResponderManagement() {
                 if (!profile?.organization_id) throw new Error("Tidak ada organisasi");
 
                 // Insert new team member (responder)
-                const { error: insertError } = await supabase
+                const { error: insertError } = await api
                   .from("profiles")
                   .insert([
                     {
@@ -266,9 +266,9 @@ export default function ResponderManagement() {
                   setAssignError(null);
                   try {
                     // Get current user profile for org_id
-                    const user = (await supabase.auth.getUser()).data.user;
+                    const user = (await api.auth.getUser()).data.user;
                     if (!user) throw new Error("Pengguna tidak terautentikasi");
-                    const { data: profile } = await supabase
+                    const { data: profile } = await api
                       .from("profiles")
                       .select("organization_id")
                       .eq("user_id", user.id)
@@ -276,7 +276,7 @@ export default function ResponderManagement() {
                     if (!profile?.organization_id) throw new Error("Tidak ada organisasi");
 
                     // Insert assignment
-                    const { error: insertError } = await supabase
+                    const { error: insertError } = await api
                       .from("team_assignments")
                       .insert([
                         {

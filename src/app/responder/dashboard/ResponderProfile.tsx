@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createApiClient } from "@/lib/api-client";
 
 export default function ResponderProfile() {
-  const supabase = createClient();
+  const api = createApiClient();
   const [profile, setProfile] = useState<any>(null);
   const [form, setForm] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -20,9 +20,9 @@ export default function ResponderProfile() {
     setLoading(true);
     setError(null);
     try {
-      const user = (await supabase.auth.getUser()).data.user;
+      const user = (await api.auth.getUser()).data.user;
       if (!user) throw new Error("User not authenticated");
-      const { data, error: profileError } = await supabase
+      const { data, error: profileError } = await api
         .from("profiles")
         .select("*")
         .eq("user_id", user.id)
@@ -32,7 +32,7 @@ export default function ResponderProfile() {
       setForm(data);
 
       // Fetch assignments for this profile
-      const { data: assignmentData } = await supabase
+      const { data: assignmentData } = await api
         .from("team_assignments")
         .select("*")
         .eq("profile_id", data.id)
@@ -55,7 +55,7 @@ export default function ResponderProfile() {
     setError(null);
     setSuccess(null);
     try {
-      const { error: updateError } = await supabase
+      const { error: updateError } = await api
         .from("profiles")
         .update({
           full_name: form.full_name,

@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createApiClient } from '@/lib/api-client';
 
 interface AboutModalProps {
   onClose: () => void;
 }
 
 export default function AboutModal({ onClose }: AboutModalProps) {
-  const supabase = createClient();
+  const api = createApiClient();
   const [content, setContent] = useState<string>('Memuat informasi...');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export default function AboutModal({ onClose }: AboutModalProps) {
     try {
       setLoading(true);
       
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from('about_content')
         .select('content')
         .eq('active', true)

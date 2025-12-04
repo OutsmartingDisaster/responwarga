@@ -15,9 +15,10 @@ const positionCounts: PositionCount = {};
  * @param lng Longitude
  * @returns A string key representing the position
  */
-export const getPositionKey = (lat: number, lng: number): string => {
+export const getPositionKey = (lat: number | string, lng: number | string): string => {
   // Use 6 decimal places for precision (about 10cm)
-  return `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  // Convert to number in case string is passed from database
+  return `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
 };
 
 /**
@@ -28,13 +29,17 @@ export const getPositionKey = (lat: number, lng: number): string => {
  * @param lng Original longitude
  * @returns Adjusted [latitude, longitude] coordinates
  */
-export const getOffsetPosition = (lat: number, lng: number): [number, number] => {
-  const key = getPositionKey(lat, lng);
+export const getOffsetPosition = (lat: number | string, lng: number | string): [number, number] => {
+  // Convert to numbers in case strings are passed from database
+  const latNum = Number(lat);
+  const lngNum = Number(lng);
+  
+  const key = getPositionKey(latNum, lngNum);
   
   // If this is the first marker at this position, no offset needed
   if (!positionCounts[key]) {
     positionCounts[key] = 1;
-    return [lat, lng];
+    return [latNum, lngNum];
   }
   
   // Count this marker
@@ -50,11 +55,8 @@ export const getOffsetPosition = (lat: number, lng: number): [number, number] =>
   const radius = 0.0003 * Math.ceil(count / 8); // Increase radius for each complete circle
   
   // Calculate new position
-  const offsetLat = lat + radius * Math.sin(angle);
-  const offsetLng = lng + radius * Math.cos(angle);
-  
-  // Log offset calculation for debugging
-  console.log(`Position offset: Original: [${lat}, ${lng}], Offset: [${offsetLat}, ${offsetLng}], Count: ${count}`);
+  const offsetLat = latNum + radius * Math.sin(angle);
+  const offsetLng = lngNum + radius * Math.cos(angle);
   
   return [offsetLat, offsetLng];
 };
