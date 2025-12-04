@@ -51,7 +51,7 @@ export default function AdminDashboard() {
         throw profileError;
       }
 
-      if (profileData?.role !== 'admin') {
+      if (profileData?.role !== 'admin' && profileData?.role !== 'super_admin') {
         await api.auth.signOut();
         router.push('/mohonijin');
         return;
