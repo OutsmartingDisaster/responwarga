@@ -21,7 +21,7 @@ export default function LiveMapView() {
   useEffect(() => {
     const fetchMapData = async () => {
       try {
-        const response = await fetch('/api/super-admin/map-data');
+        const response = await fetch('/api/mohonijin/map-data');
         const result = await response.json();
         setMarkers(result.markers || []);
         setStats(result.stats || { reports: 0, operations: 0, responders: 0 });

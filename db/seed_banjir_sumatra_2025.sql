@@ -10,7 +10,7 @@ INSERT INTO crowdsource_projects (
   require_location, auto_approve
 ) VALUES (
   'Banjir Sumatra 2025',
-  'Dokumentasi dampak banjir di Provinsi Aceh, Sumatera Utara, dan Sumatera Barat. Bantu kami mengumpulkan foto dan video kondisi terkini untuk koordinasi bantuan.',
+  'Bantu kami mengumpulkan foto dan video kondisi terkini agar kami bisa menganalisis dampak bencana. Hasil analisis tersebut akan dibuat web pembelajaran untuk publik.',
   'flood', 'active',
   'Sumatra Bagian Utara', 2.0, 99.0,
   'provinsi', true,

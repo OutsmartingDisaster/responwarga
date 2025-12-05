@@ -140,25 +140,22 @@ export default function Home() {
       </div>
 
       {/* Header */}
-      <header className="absolute top-8 left-0 right-0 p-4 flex flex-col z-20">
-        <h1 className="text-2xl font-heading font-bold text-white flex items-center gap-2">
-          <div className="flex items-center">
-            <img
-              src="/icons/response.svg"
-              alt="Respon Warga"
-              className="w-8 h-8 mr-2"
-            />
-          </div>
+      <header className="absolute top-8 left-0 right-0 px-3 sm:px-4 flex flex-col z-20">
+        <h1 className="text-xl sm:text-2xl font-heading font-bold text-white flex items-center gap-2">
+          <img
+            src="/icons/response.svg"
+            alt="Respon Warga"
+            className="w-7 h-7 sm:w-8 sm:h-8"
+          />
           Respon Warga
         </h1>
 
         {/* Filter Controls */}
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-3 sm:mt-4 flex flex-wrap gap-2">
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value as FilterType)}
-            className="px-3 py-1.5 bg-zinc-800/80 backdrop-blur border border-zinc-700 rounded-md text-sm text-white font-space-grotesk focus:outline-none focus:ring-2 focus:ring-blue-500"
-            style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+            className="px-2.5 sm:px-3 py-1.5 bg-zinc-800/90 backdrop-blur border border-zinc-700 rounded-lg text-xs sm:text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all" className="bg-zinc-800 text-white">Semua Marker</option>
             <option value="emergency" className="bg-zinc-800 text-white">Laporan Darurat</option>
@@ -199,17 +196,17 @@ export default function Home() {
       </header>
 
       {/* Bottom Navigation */}
-      <nav className="absolute bottom-0 left-0 right-0 p-4 flex flex-col items-center space-y-4 z-10">
-        <div className="flex flex-col sm:flex-row justify-center space-y-3 sm:space-y-0 sm:space-x-4 w-full max-w-md mx-auto">
+      <nav className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 pb-safe flex flex-col items-center space-y-3 sm:space-y-4 z-10">
+        <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 w-full max-w-md mx-auto px-2">
           <button
             onClick={() => setShowEmergencyForm(true)}
-            className="w-full sm:w-auto px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-full shadow-lg transition-colors"
+            className="flex-1 sm:flex-none px-6 py-3.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-medium rounded-full shadow-lg transition-colors text-sm sm:text-base"
           >
             Butuh Bantuan
           </button>
           <button
             onClick={() => setShowContributionForm(true)}
-            className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-full shadow-lg transition-colors"
+            className="flex-1 sm:flex-none px-6 py-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-full shadow-lg transition-colors text-sm sm:text-base"
           >
             Beri Bantuan
           </button>

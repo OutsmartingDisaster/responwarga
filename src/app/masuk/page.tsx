@@ -1,18 +1,37 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, Mail, Lock, UserPlus, LogIn } from 'lucide-react'
 import { AuthHeader, FormInput, RoleSelector, AuthMessage, SubmitButton, type UserRole } from '@/components/auth'
-import { registerUser, loginUser } from '@/lib/auth/api'
+import { registerUser, loginUser, getSession } from '@/lib/auth/api'
 import { getRegistrationRedirect, getLoginRedirect } from '@/lib/auth/redirect'
 
 export default function MasukPage() {
   const router = useRouter()
   const [isRegister, setIsRegister] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        const user = await getSession()
+        if (user) {
+          const redirect = await getLoginRedirect(user)
+          router.replace(redirect.path)
+          return
+        }
+      } catch (err) {
+        console.error('Session check error:', err)
+      }
+      setCheckingSession(false)
+    }
+    checkExistingSession()
+  }, [router])
 
   // Form state
   const [name, setName] = useState('')
@@ -53,7 +72,7 @@ export default function MasukPage() {
       if (result.user) {
         const redirect = await getRegistrationRedirect(result.user)
         if (redirect.message) setSuccess(redirect.message)
-        setTimeout(() => router.push(redirect.path), redirect.delay || 0)
+        setTimeout(() => router.replace(redirect.path), redirect.delay || 0)
       }
     } else {
       const result = await loginUser({ email, password })
@@ -65,7 +84,7 @@ export default function MasukPage() {
 
       if (result.user) {
         const redirect = await getLoginRedirect(result.user)
-        router.push(redirect.path)
+        router.replace(redirect.path)
       }
     }
 
@@ -76,6 +95,15 @@ export default function MasukPage() {
     setIsRegister(!isRegister)
     setError(null)
     setSuccess(null)
+  }
+
+  // Show loading while checking session
+  if (checkingSession) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    )
   }
 
   return (

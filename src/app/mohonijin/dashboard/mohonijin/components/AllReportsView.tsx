@@ -25,7 +25,7 @@ export default function AllReportsView() {
     const fetchReports = async () => {
       try {
         const params = filter !== 'all' ? `?status=${filter}` : '';
-        const response = await fetch(`/api/super-admin/reports${params}`);
+        const response = await fetch(`/api/mohonijin/reports${params}`);
         const result = await response.json();
         setReports(result.data || []);
       } catch (err) {

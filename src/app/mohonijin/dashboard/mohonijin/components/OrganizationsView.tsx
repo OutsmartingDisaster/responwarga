@@ -21,7 +21,7 @@ export default function OrganizationsView() {
   useEffect(() => {
     const fetchOrgs = async () => {
       try {
-        const response = await fetch('/api/super-admin/organizations');
+        const response = await fetch('/api/mohonijin/organizations');
         const result = await response.json();
         setOrganizations(result.data || []);
       } catch (err) {

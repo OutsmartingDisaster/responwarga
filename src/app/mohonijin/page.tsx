@@ -21,8 +21,10 @@ export default function AdminLogin() {
 
         if (response.ok) {
           const sessionData = await response.json();
-          if (sessionData.data?.user?.role === 'admin') {
-            router.push('/mohonijin/dashboard');
+          const role = sessionData.data?.user?.role;
+          // Redirect admin/super_admin to dashboard if already logged in
+          if (role === 'admin' || role === 'super_admin') {
+            router.replace('/mohonijin/dashboard');
           }
         }
       } catch (err) {
@@ -71,7 +73,7 @@ export default function AdminLogin() {
       // Check if user is an admin or super_admin
       const role = result.data?.user?.role;
       if (role === 'admin' || role === 'super_admin') {
-        router.push('/mohonijin/dashboard');
+        router.replace('/mohonijin/dashboard');
       } else {
         setError('Access Denied: You do not have permission to access this area.');
         setLoading(false);

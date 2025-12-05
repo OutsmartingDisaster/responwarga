@@ -58,13 +58,12 @@ export async function POST(
     if (submitterEmail && !submitterEmail.includes('@')) {
       return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
     }
-    // Validate caption length (longer if location uncertain)
-    const minCaptionLength = locationUncertain ? 50 : 20;
-    if (caption.length < minCaptionLength) {
+    // Validate caption word count (always 5 words minimum)
+    const wordCount = caption.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
+    const minWords = 5;
+    if (wordCount < minWords) {
       return NextResponse.json({ 
-        error: locationUncertain 
-          ? 'Lokasi tidak pasti: Deskripsi minimal 50 karakter' 
-          : 'Caption must be at least 20 characters' 
+        error: `Deskripsi minimal ${minWords} kata` 
       }, { status: 400 });
     }
     

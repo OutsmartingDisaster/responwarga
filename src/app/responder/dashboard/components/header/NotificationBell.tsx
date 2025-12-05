@@ -1,32 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, X, Check, Clock, AlertTriangle, UserPlus, ClipboardList } from 'lucide-react';
+import { Bell, X, Check, Clock, AlertTriangle, UserPlus, ClipboardList, Wifi, WifiOff } from 'lucide-react';
+import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 
-interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  is_read: boolean;
-  created_at: string;
-  reference_type?: string;
-  reference_id?: string;
+interface NotificationBellProps {
+  userId?: string;
 }
 
-export default function NotificationBell() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+export default function NotificationBell({ userId }: NotificationBellProps) {
+  const { notifications, unreadCount, isConnected, markAsRead, markAllAsRead } = useRealtimeNotifications(userId || null);
   const [isOpen, setIsOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const unreadCount = notifications.filter(n => !n.is_read).length;
-
-  useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -37,34 +22,6 @@ export default function NotificationBell() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const fetchNotifications = async () => {
-    try {
-      const response = await fetch('/api/notifications?limit=10');
-      const result = await response.json();
-      if (response.ok) setNotifications(result.data || []);
-    } catch (err) {
-      console.error('Failed to fetch notifications:', err);
-    }
-  };
-
-  const markAsRead = async (id: string) => {
-    try {
-      await fetch(`/api/notifications/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_read: true }) });
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-    } catch (err) {
-      console.error('Failed to mark as read:', err);
-    }
-  };
-
-  const markAllAsRead = async () => {
-    try {
-      await fetch('/api/notifications/mark-all-read', { method: 'POST' });
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-    } catch (err) {
-      console.error('Failed to mark all as read:', err);
-    }
-  };
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -85,6 +42,8 @@ export default function NotificationBell() {
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
+        <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-slate-800 ${isConnected ? 'bg-green-500' : 'bg-slate-500'}`} 
+          title={isConnected ? 'Real-time connected' : 'Connecting...'} />
       </button>
 
       {isOpen && (

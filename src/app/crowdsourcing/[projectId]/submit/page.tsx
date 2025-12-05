@@ -121,14 +121,12 @@ export default function SubmitPage() {
     if (!location) return 'Pilih lokasi kejadian';
     if (!address) return 'Alamat tidak ditemukan';
     
-    // Validasi caption - minimal 15 kata
+    // Validasi caption - minimal 5 kata
     const wordCount = caption.trim().split(/\s+/).filter(w => w.length > 0).length;
-    const minWords = locationUncertain ? 25 : 15;
+    const minWords = 5;
     
     if (wordCount < minWords) {
-      return locationUncertain 
-        ? `Lokasi tidak pasti: Deskripsi minimal ${minWords} kata (sekarang ${wordCount} kata). Jelaskan landmark/ciri-ciri lokasi.`
-        : `Deskripsi minimal ${minWords} kata (sekarang ${wordCount} kata)`;
+      return `Deskripsi minimal ${minWords} kata (sekarang ${wordCount} kata)`;
     }
     
     if (locationUncertain && locationLevel === 'exact') {
@@ -401,7 +399,7 @@ export default function SubmitPage() {
           {/* Caption */}
           {(() => {
             const wordCount = caption.trim().split(/\s+/).filter(w => w.length > 0).length;
-            const minWords = locationUncertain ? 25 : 15;
+            const minWords = 5; // Always 5 words minimum
             const isValid = wordCount >= minWords;
             return (
               <div>

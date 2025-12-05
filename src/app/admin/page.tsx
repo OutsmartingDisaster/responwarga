@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Bell,
   Send,
+  Menu,
   MapPin,
   Radio,
   UserCheck,
@@ -68,6 +69,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const dataFetchedRef = React.useRef(false);
 
@@ -281,13 +283,26 @@ export default function AdminDashboard() {
     <div className="flex h-screen bg-[#0f172a] text-slate-300 font-sans selection:bg-blue-500/30 overflow-hidden">
       <Toaster position="top-right" />
 
+      {/* Mobile sidebar backdrop */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />
+      )}
+
       {/* --- Sidebar --- */}
       <aside
-        className={`relative flex flex-col h-full border-r border-white/5 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] z-50
-        ${sidebarCollapsed ? 'w-20' : 'w-72'}
+        className={`fixed lg:relative flex flex-col h-full border-r border-white/5 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] z-50
+        ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-72'} w-72
         bg-[#0f172a]
+        ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
+        {/* Mobile close button */}
+        {mobileSidebarOpen && (
+          <button onClick={() => setMobileSidebarOpen(false)} className="lg:hidden absolute top-4 right-4 p-2 rounded-lg hover:bg-white/10 text-slate-400 z-10">
+            <X size={20} />
+          </button>
+        )}
+
         <div className="flex items-center gap-3 p-6 mb-2">
           <div className="relative flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-all duration-500 bg-blue-600 shadow-blue-500/20 overflow-hidden">
             {organization?.logo_url ? (
@@ -327,23 +342,27 @@ export default function AdminDashboard() {
         <div className="absolute top-0 left-0 w-full h-96 blur-[120px] pointer-events-none transition-colors duration-1000 bg-blue-600/10" />
 
         {/* Top Header */}
-        <header className="flex items-center justify-between px-8 py-5 z-10 shrink-0">
-          <div className="flex items-center gap-4">
+        <header className="flex items-center justify-between px-4 sm:px-8 py-4 sm:py-5 z-10 shrink-0">
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Mobile menu button */}
+            <button onClick={() => setMobileSidebarOpen(true)} className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-white/10 text-slate-300">
+              <Menu size={24} />
+            </button>
             <div className="flex flex-col">
-              <h2 className="text-2xl font-bold text-white tracking-tight">
+              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                 {activeTab === 'dashboard' ? 'Command Center' :
                   activeTab === 'team' ? 'Manajemen Tim' :
                     activeTab === 'reports' ? 'Laporan Masuk' :
                       activeTab === 'map' ? 'Peta Wilayah' : 'Pengaturan'}
               </h2>
-              <p className="text-sm text-slate-400 flex items-center gap-2">
+              <p className="text-xs sm:text-sm text-slate-400 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500"></span>
                 {stats.activeResponders} Responder Aktif
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-slate-800/50 rounded-full border border-white/5 text-sm">
               <Clock size={14} className="text-slate-400" />
               <span className="font-mono text-slate-300">
@@ -351,22 +370,22 @@ export default function AdminDashboard() {
               </span>
             </div>
 
-            <button className="relative p-2.5 rounded-full bg-slate-800/50 hover:bg-slate-700/50 border border-white/5 text-slate-300 hover:text-white transition-colors">
-              <Bell size={20} />
+            <button className="relative p-2 sm:p-2.5 rounded-full bg-slate-800/50 hover:bg-slate-700/50 border border-white/5 text-slate-300 hover:text-white transition-colors">
+              <Bell size={18} className="sm:w-5 sm:h-5" />
               {assignments.filter(a => a.status === 'assigned').length > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs flex items-center justify-center text-white font-bold">
+                <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 bg-red-500 rounded-full text-[10px] sm:text-xs flex items-center justify-center text-white font-bold">
                   {assignments.filter(a => a.status === 'assigned').length}
                 </span>
               )}
             </button>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br border-2 border-slate-900 shadow-lg cursor-pointer flex items-center justify-center text-white font-bold transition-all duration-500 from-blue-500 to-indigo-600">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br border-2 border-slate-900 shadow-lg cursor-pointer flex items-center justify-center text-white font-bold text-sm transition-all duration-500 from-blue-500 to-indigo-600">
               AD
             </div>
           </div>
         </header>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto px-8 z-10 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-8 z-10 custom-scrollbar">
           {activeTab === 'dashboard' && (
             <DashboardOverview 
               stats={stats} 

@@ -44,6 +44,8 @@ services:
       PORT: 3535
     ports:
       - "3535:3535"
+    volumes:
+      - ./uploads:/app/public/uploads
     depends_on:
       db:
         condition: service_healthy

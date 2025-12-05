@@ -2,7 +2,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, MapPin, Users, FileText, ClipboardList, Plus, Loader2 } from 'lucide-react';
-import { DISASTER_TYPES, ResponseOperation } from '@/types/operations';
+import { DISASTER_TYPES, ResponseOperation, DisasterType } from '@/types/operations';
+import dynamic from 'next/dynamic';
+import FieldReportsList from './components/FieldReportsList';
+
+const FieldReportForm = dynamic(() => import('./components/FieldReportForm'), { ssr: false });
 
 interface MyOperationDetailProps {
   operationId: string;
@@ -87,7 +91,7 @@ export default function MyOperationDetail({ operationId, onBack }: MyOperationDe
       {/* Content */}
       {activeTab === 'overview' && <OverviewTab operation={operation} />}
       {activeTab === 'assignments' && <AssignmentsTab operationId={operationId} />}
-      {activeTab === 'reports' && <ReportsTab operationId={operationId} />}
+      {activeTab === 'reports' && <ReportsTab operationId={operationId} disasterType={operation.disaster_type} />}
     </div>
   );
 }
@@ -157,20 +161,35 @@ function AssignmentsTab({ operationId }: { operationId: string }) {
   );
 }
 
-function ReportsTab({ operationId }: { operationId: string }) {
+function ReportsTab({ operationId, disasterType }: { operationId: string; disasterType: DisasterType }) {
+  const [showForm, setShowForm] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [hasReports, setHasReports] = useState<boolean | null>(null);
+
+  const handleSuccess = () => {
+    setShowForm(false);
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Laporan Lapangan</h3>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl">
+        <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl">
           <Plus className="w-4 h-4" /> Buat Laporan
         </button>
       </div>
-      <div className="text-center py-12 bg-slate-800/30 rounded-2xl border border-white/5">
-        <FileText className="w-12 h-12 text-slate-500 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-white mb-2">Belum ada laporan</h3>
-        <p className="text-slate-400">Buat laporan lapangan untuk operasi ini</p>
-      </div>
+
+      <FieldReportsList operationId={operationId} refreshTrigger={refreshTrigger} />
+
+      {showForm && (
+        <FieldReportForm
+          operationId={operationId}
+          disasterType={disasterType}
+          onClose={() => setShowForm(false)}
+          onSuccess={handleSuccess}
+        />
+      )}
     </div>
   );
 }

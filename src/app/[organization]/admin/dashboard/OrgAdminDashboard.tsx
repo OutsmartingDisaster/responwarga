@@ -7,9 +7,10 @@ import { logoutUser } from '@/lib/auth/api';
 import {
   Users, Activity, Shield, Settings, ChevronRight, ChevronDown,
   Clock, MapPin, Radio, CheckCircle2, AlertTriangle, LogOut,
-  Building2, FileText, UserCheck, Send, X
+  Building2, FileText, UserCheck
 } from 'lucide-react';
 import { toast, Toaster } from 'react-hot-toast';
+import { OperationsTab, ReportsTab, TeamTab, SettingsTab } from './components';
 
 interface Profile {
   id: string; name: string; role: string; status: string;
@@ -271,77 +272,24 @@ export default function OrgAdminDashboard({ orgSlug }: { orgSlug: string }) {
           )}
 
           {activeTab === 'operations' && (
-            <div className="bg-slate-800/50 border border-white/5 rounded-xl p-5">
-              <p className="text-slate-400">Manajemen operasi - gunakan menu "Operasi Respon" di Field Dashboard untuk membuat operasi baru.</p>
-              <button onClick={() => router.push(`/${orgSlug}/responder/dashboard`)} 
-                className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm">
-                Buka Field Dashboard
-              </button>
-            </div>
+            <OperationsTab organizationId={organization?.id || ''} />
           )}
 
           {activeTab === 'team' && (
-            <div className="bg-slate-800/50 border border-white/5 rounded-xl overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-slate-900/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Nama</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Role</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Telepon</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {members.map(m => (
-                    <tr key={m.id} className="hover:bg-slate-900/30">
-                      <td className="px-4 py-3 text-sm text-white">{m.name}</td>
-                      <td className="px-4 py-3 text-sm text-slate-400">{m.role}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          m.status === 'on_duty' ? 'bg-green-600/20 text-green-400' :
-                          m.status === 'active' ? 'bg-yellow-600/20 text-yellow-400' : 'bg-slate-600/20 text-slate-400'
-                        }`}>{m.status || 'offline'}</span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-400">{m.phone || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <TeamTab organizationId={organization?.id || ''} onRefresh={fetchData} />
           )}
 
           {activeTab === 'reports' && (
-            <div className="bg-slate-800/50 border border-white/5 rounded-xl p-5">
-              <p className="text-slate-400">Fitur laporan akan segera hadir.</p>
-            </div>
+            <ReportsTab organizationId={organization?.id || ''} />
           )}
 
           {activeTab === 'settings' && (
-            <div className="bg-slate-800/50 border border-white/5 rounded-xl p-5 max-w-2xl">
-              <h3 className="text-lg font-semibold text-white mb-4">Informasi Organisasi</h3>
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 rounded-xl bg-slate-700 flex items-center justify-center overflow-hidden">
-                    {organization?.logo_url ? (
-                      <img src={organization.logo_url} alt="Logo" className="w-full h-full object-cover" />
-                    ) : (
-                      <Building2 size={32} className="text-slate-500" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-white font-medium">{organization?.name}</p>
-                    <p className="text-sm text-slate-400">/{organization?.slug}</p>
-                  </div>
-                </div>
-                <p className="text-sm text-slate-400">
-                  Untuk mengubah logo dan pengaturan lainnya, gunakan menu Pengaturan di Field Dashboard.
-                </p>
-                <button onClick={() => router.push(`/${orgSlug}/responder/dashboard`)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm">
-                  Buka Field Dashboard
-                </button>
-              </div>
-            </div>
+            <SettingsTab 
+              profile={profile} 
+              organization={organization} 
+              onProfileUpdate={setProfile}
+              onOrganizationUpdate={setOrganization}
+            />
           )}
         </div>
       </main>

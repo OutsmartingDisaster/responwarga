@@ -91,9 +91,9 @@ export async function getRegistrationRedirect(user: AuthUser): Promise<RedirectR
 export async function getLoginRedirect(user: AuthUser): Promise<RedirectResult> {
   const role = user.profile?.role || user.role
 
-  // Super Admin -> admin dashboard
-  if (role === 'admin') {
-    return { path: '/admin' }
+  // Super Admin -> mohonijin dashboard
+  if (role === 'super_admin' || role === 'admin') {
+    return { path: '/mohonijin/dashboard' }
   }
 
   // Public user -> home

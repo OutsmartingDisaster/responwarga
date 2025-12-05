@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Check, X, Flag, MapPin, Loader2 } from 'lucide-react';
+import { ArrowLeft, Check, X, Flag, MapPin, Loader2, Clock, User, Phone, Mail, Eye } from 'lucide-react';
 import { getSession } from '@/lib/auth/api';
 import type { CrowdsourceSubmission } from '@/lib/crowdsourcing/types';
 
@@ -21,6 +21,7 @@ export default function ModeratorProjectPage() {
   const [filter, setFilter] = useState('pending');
   const [processing, setProcessing] = useState<string | null>(null);
   const [permissions, setPermissions] = useState({ can_approve: false, can_reject: false, can_flag: false });
+  const [selected, setSelected] = useState<CrowdsourceSubmission | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -116,7 +117,7 @@ export default function ModeratorProjectPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map(sub => (
               <div key={sub.id} className="bg-zinc-800/50 border border-zinc-700 rounded-xl overflow-hidden">
-                <div className="aspect-video bg-zinc-900 relative">
+                <div className="aspect-video bg-zinc-900 relative cursor-pointer" onClick={() => setSelected(sub)}>
                   {sub.media_type === 'video' ? (
                     <video src={sub.media_url} className="w-full h-full object-cover" />
                   ) : (
@@ -125,6 +126,9 @@ export default function ModeratorProjectPage() {
                   <span className={`absolute top-2 right-2 px-2 py-0.5 text-xs rounded-full ${statusColors[sub.status]}`}>
                     {sub.status}
                   </span>
+                  <div className="absolute inset-0 bg-black/0 hover:bg-black/30 transition flex items-center justify-center opacity-0 hover:opacity-100">
+                    <Eye size={24} className="text-white" />
+                  </div>
                 </div>
                 <div className="p-4">
                   <p className="text-sm line-clamp-2 mb-2">{sub.caption}</p>
@@ -160,6 +164,83 @@ export default function ModeratorProjectPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Detail Modal */}
+        {selected && (
+          <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
+            <div className="bg-zinc-900 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="relative">
+                {selected.media_type === 'video' ? (
+                  <video src={selected.media_url} controls className="w-full rounded-t-2xl max-h-[50vh] object-contain bg-black" />
+                ) : (
+                  <img src={selected.media_url} alt="" className="w-full rounded-t-2xl max-h-[50vh] object-contain bg-black" />
+                )}
+                <button onClick={() => setSelected(null)} className="absolute top-3 right-3 p-2 bg-black/50 hover:bg-black/70 rounded-full">
+                  <X size={20} />
+                </button>
+                <span className={`absolute top-3 left-3 px-3 py-1 text-sm rounded-full ${statusColors[selected.status]}`}>
+                  {selected.status}
+                </span>
+              </div>
+              
+              <div className="p-5 space-y-4">
+                <p className="text-lg">{selected.caption}</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="flex items-start gap-2 text-zinc-400">
+                    <MapPin size={16} className="mt-0.5 flex-shrink-0" />
+                    <span>{selected.address}{selected.address_detail && ` - ${selected.address_detail}`}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-zinc-400">
+                    <Clock size={16} />
+                    <span>{new Date(selected.submitted_at).toLocaleString('id-ID')}</span>
+                  </div>
+                  {selected.submitter_name && (
+                    <div className="flex items-center gap-2 text-zinc-400">
+                      <User size={16} />
+                      <span>{selected.submitter_name}</span>
+                    </div>
+                  )}
+                  {selected.submitter_email && (
+                    <div className="flex items-center gap-2 text-zinc-400">
+                      <Mail size={16} />
+                      <span>{selected.submitter_email}</span>
+                    </div>
+                  )}
+                  {selected.submitter_whatsapp && (
+                    <div className="flex items-center gap-2 text-zinc-400">
+                      <Phone size={16} />
+                      <span>{selected.submitter_whatsapp}</span>
+                    </div>
+                  )}
+                </div>
+
+                {selected.status === 'pending' && (
+                  <div className="flex gap-2 pt-2 border-t border-zinc-700">
+                    {permissions.can_approve && (
+                      <button onClick={() => { handleVerify(selected.id, 'approved'); setSelected(null); }}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-green-600 hover:bg-green-700 rounded-lg">
+                        <Check size={18} /> Approve
+                      </button>
+                    )}
+                    {permissions.can_reject && (
+                      <button onClick={() => { handleVerify(selected.id, 'rejected'); setSelected(null); }}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-600 hover:bg-red-700 rounded-lg">
+                        <X size={18} /> Reject
+                      </button>
+                    )}
+                    {permissions.can_flag && (
+                      <button onClick={() => { handleVerify(selected.id, 'flagged'); setSelected(null); }}
+                        className="px-4 py-2.5 bg-orange-600 hover:bg-orange-700 rounded-lg">
+                        <Flag size={18} />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </main>

@@ -27,7 +27,7 @@ export default function SuperAdminOverview({ stats }: { stats: Stats }) {
   useEffect(() => {
     const fetchRecent = async () => {
       try {
-        const response = await fetch('/api/super-admin/reports?limit=10');
+        const response = await fetch('/api/mohonijin/reports?limit=10');
         const result = await response.json();
         setRecentReports(result.data || []);
       } catch (err) {
