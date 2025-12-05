@@ -9,6 +9,7 @@ import OperationsManager from './operations';
 import MyOperationsManager from './my-operations';
 import AssignmentsManager from './assignments';
 import ProfileSettings from './components/settings/ProfileSettings';
+import DailyLog from './DailyLog';
 import { useDashboardData } from './hooks/useDashboardData';
 
 export default function DisasterResponseDashboard() {
@@ -135,7 +136,7 @@ export default function DisasterResponseDashboard() {
           {activeTab === 'my-operations' && <MyOperationsManager />}
           {activeTab === 'assignments' && <AssignmentsManager />}
           {activeTab === 'settings' && <ProfileSettings profile={profile} onUpdate={setProfile} />}
-          {activeTab === 'log' && <div className="p-10 text-center text-slate-500">Coming Soon</div>}
+          {activeTab === 'log' && <DailyLog />}
         </div>
       </main>
     </div>

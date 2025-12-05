@@ -18,15 +18,21 @@ export async function GET(request: NextRequest) {
       SELECT 
         ra.*,
         er.description as report_description,
-        er.category as report_category,
+        er.disaster_type as report_category,
         er.latitude as report_lat,
         er.longitude as report_lng,
         er.photo_url as report_photo,
+        er.location as report_location,
+        er.address as report_address,
+        er.full_name as reporter_name,
+        er.phone_number as reporter_phone,
+        er.assistance_type,
         ro.name as operation_name,
         ro.disaster_type,
+        ro.disaster_location_name as operation_location,
         assigner.full_name as assigner_name
       FROM report_assignments ra
-      LEFT JOIN emergency_reports er ON er.id = ra.report_id AND ra.report_type = 'emergency_report'
+      LEFT JOIN emergency_reports er ON er.id = ra.report_id
       LEFT JOIN response_operations ro ON ro.id = ra.response_operation_id
       LEFT JOIN profiles assigner ON assigner.user_id = ra.assigned_by
       WHERE ra.assigned_to = $1

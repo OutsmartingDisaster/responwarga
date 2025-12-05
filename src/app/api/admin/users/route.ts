@@ -14,8 +14,8 @@ async function isAdmin(): Promise<boolean> {
   console.log('isAdmin: User ID:', user.id);
   console.log('isAdmin: User role:', user.role);
 
-  // Check if user has admin role
-  return hasPermission(user.role, 'admin') || user.role === 'admin';
+  // Check if user has admin or super_admin role
+  return hasPermission(user.role, 'admin') || user.role === 'admin' || user.role === 'super_admin';
 }
 
 // --- GET Handler (Fetch All Users) ---

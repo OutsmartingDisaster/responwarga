@@ -13,6 +13,13 @@ export const LiveMap = ({ center, zoom = 15, markers = [] }: { center: [number, 
     const mapInstanceRef = useRef<any>(null);
     const vectorSourceRef = useRef<any>(null);
 
+    // Validate center coordinates
+    const safeCenter: [number, number] = Array.isArray(center) && center.length === 2 && 
+        typeof center[0] === 'number' && typeof center[1] === 'number' &&
+        !isNaN(center[0]) && !isNaN(center[1])
+        ? center 
+        : [106.8456, -6.2088]; // Default to Jakarta
+
     useEffect(() => {
         const initMap = async () => {
             if (!mapContainerRef.current) {
@@ -60,7 +67,7 @@ export const LiveMap = ({ center, zoom = 15, markers = [] }: { center: [number, 
                     })
                 });
 
-                console.log('Initializing map with center:', center, 'zoom:', zoom);
+                console.log('Initializing map with center:', safeCenter, 'zoom:', zoom);
 
                 // Create Map
                 const map = new Map({
@@ -76,7 +83,7 @@ export const LiveMap = ({ center, zoom = 15, markers = [] }: { center: [number, 
                         vectorLayer
                     ],
                     view: new View({
-                        center: fromLonLat(center),
+                        center: fromLonLat(safeCenter),
                         zoom: zoom
                     }),
                     controls: []
@@ -134,19 +141,19 @@ export const LiveMap = ({ center, zoom = 15, markers = [] }: { center: [number, 
             const updateView = async () => {
                 const { fromLonLat } = await import('ol/proj');
                 const view = mapInstanceRef.current.getView();
-                view.setCenter(fromLonLat(center));
+                view.setCenter(fromLonLat(safeCenter));
                 view.setZoom(zoom);
             };
             updateView();
         }
-    }, [center, zoom]);
+    }, [safeCenter, zoom]);
 
     const updateMarkers = (source: any, markers: any[], Feature: any, Point: any, fromLonLat: any) => {
         source.clear();
 
         // Add Center Marker
         const centerFeature = new Feature({
-            geometry: new Point(fromLonLat(center)),
+            geometry: new Point(fromLonLat(safeCenter)),
             name: 'Center'
         });
         source.addFeature(centerFeature);

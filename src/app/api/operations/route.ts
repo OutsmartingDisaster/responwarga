@@ -80,8 +80,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Only org_admin can create operations
-    if (user.role !== 'org_admin' && user.role !== 'admin') {
+    // Only org_admin, admin, or super_admin can create operations
+    if (!['org_admin', 'admin', 'super_admin'].includes(user.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

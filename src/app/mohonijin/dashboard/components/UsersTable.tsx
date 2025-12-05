@@ -120,9 +120,10 @@ export default function UsersTable() {
             let activeAssignments = 0;
             try {
               const { count, error: assignmentError } = await api
-                .from('team_assignments')
+                .from('assignments')
                 .select('*', { count: 'exact' })
-                .eq('organization_id', user.organization_id);
+                .eq('organization_id', user.organization_id)
+                .in('status', ['assigned', 'accepted', 'in_progress']);
 
               if (assignmentError) console.error(`UsersTable: Error fetching assignments for org ${user.organization_id}:`, JSON.stringify(assignmentError));
               else {

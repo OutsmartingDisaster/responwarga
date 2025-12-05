@@ -31,8 +31,14 @@ export default function DashboardHeader({
   const [showMenu, setShowMenu] = useState(false);
 
   const handleLogout = async () => {
-    await logoutUser();
-    router.push('/masuk');
+    try {
+      await logoutUser();
+      // Force hard navigation to clear any cached state
+      window.location.href = '/masuk';
+    } catch (err) {
+      console.error('Logout error:', err);
+      window.location.href = '/masuk';
+    }
   };
 
   const getTitle = () => {

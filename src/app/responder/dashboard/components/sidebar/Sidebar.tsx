@@ -1,6 +1,6 @@
 'use client';
 
-import { Shield, Activity, Radio, FileText, Camera, Wifi, Settings, ChevronRight, ClipboardList, CheckSquare, X } from 'lucide-react';
+import { Shield, Activity, Radio, FileText, Settings, ChevronRight, ClipboardList, CheckSquare, X } from 'lucide-react';
 import SidebarItem from './SidebarItem';
 
 interface SidebarProps {
@@ -113,16 +113,7 @@ export default function Sidebar({
           active={activeTab === 'log'} 
           onClick={() => handleNavClick('log')} 
           collapsed={collapsed} 
-          badge="New" 
           theme="orange" 
-        />
-        <SidebarItem icon={Camera} label="Unggah Bukti" collapsed={collapsed} theme="orange" />
-        <SidebarItem 
-          icon={Wifi} 
-          label="Offline Mode" 
-          collapsed={collapsed} 
-          theme={isOffline ? 'orange' : 'slate'} 
-          onClick={() => setIsOffline(!isOffline)} 
         />
       </nav>
 

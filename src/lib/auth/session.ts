@@ -35,7 +35,7 @@ export async function createSession(userId: string) {
 
 export async function revokeSession(token: string) {
   const tokenHash = hashToken(token)
-  await query('UPDATE auth.sessions SET revoked_at = NOW() WHERE token_hash = ', [tokenHash])
+  await query('UPDATE auth.sessions SET revoked_at = NOW() WHERE token_hash = $1', [tokenHash])
 }
 
 export function setSessionCookie(response: NextResponse, token: string, expiresAt: Date) {

@@ -106,8 +106,8 @@ export async function POST(request: NextRequest) {
       
       // Update existing profile
       await query(
-        `UPDATE profiles SET organization_id = $1, role = $2, name = $3, full_name = $3, phone = $4, updated_at = NOW() WHERE user_id = $5`,
-        [orgId, role || 'org_responder', name, phone || null, userId]
+        `UPDATE profiles SET organization_id = $1, role = $2, name = $3::varchar, full_name = $4::text, phone = COALESCE($5::text, phone), updated_at = NOW() WHERE user_id = $6`,
+        [orgId, role || 'org_responder', name, name, phone || null, userId]
       );
       
       // Update auth.users role
@@ -125,8 +125,8 @@ export async function POST(request: NextRequest) {
       
       // Create profile
       await query(
-        `INSERT INTO profiles (user_id, organization_id, name, full_name, role, phone) VALUES ($1, $2, $3, $3, $4, $5)`,
-        [userId, orgId, name, role || 'org_responder', phone || null]
+        `INSERT INTO profiles (user_id, organization_id, name, full_name, role, phone) VALUES ($1, $2, $3::varchar, $4::text, $5, $6::text)`,
+        [userId, orgId, name, name, role || 'org_responder', phone || null]
       );
     }
 

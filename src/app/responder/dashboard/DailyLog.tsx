@@ -1,17 +1,17 @@
 "use client";
-import { useEffect, useState, useRef, useCallback } from "react";
-import { createApiClient } from "@/lib/api-client";
+import { useEffect, useState, useCallback } from "react";
 import { toast } from "react-hot-toast";
 
 // Types
 type LogEntry = {
   id: string;
   created_at: string;
+  log_date: string;
   activity_type: string;
-  description: string;
-  location: string;
-  photos: string[];
-  status: string; // draft, submitted
+  log_content: string;
+  duration_minutes?: number;
+  photos?: string[];
+  status: string;
 };
 
 type DailyLogStats = {
@@ -21,7 +21,6 @@ type DailyLogStats = {
 };
 
 export default function DailyLog() {
-  const api = createApiClient();
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<LogEntry[]>([]);
@@ -29,55 +28,45 @@ export default function DailyLog() {
 
   // Form State
   const [formData, setFormData] = useState({
-    activity_type: "Patroli",
-    description: "",
-    location: "",
+    activity_type: "patrol",
+    log_content: "",
+    duration_minutes: 0,
     photos: [] as File[],
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch Logs
+  // Fetch Logs using new API
   const fetchLogs = useCallback(async (targetDate: string) => {
     setLoading(true);
     try {
-      const { data: { user } } = await api.auth.getUser();
-      if (!user) return;
-
-      // 1. Get or Create Daily Log Parent
-      // For MVP, we might just query activity_logs directly filtered by date and user/org
-      // But let's stick to the existing pattern if possible, or simplify.
-      // Let's assume we fetch 'activity_logs' directly for the date.
-
-      // Fetch activity logs for the date
-      // We need to ensure we have the correct table structure. 
-      // Existing code used 'activity_logs' table.
-
-      const { data, error } = await api
-        .from('activity_logs')
-        .select('*')
-        .eq('date', targetDate) // Assuming activity_logs has a date column or we filter by created_at
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        // If error, maybe table doesn't exist or schema differs. 
-        // Let's assume we use a new simple structure or the existing one.
-        console.error("Error fetching logs:", error);
+      const res = await fetch(`/api/daily-logs?date=${targetDate}`, {
+        credentials: 'include'
+      });
+      const result = await res.json();
+      
+      if (!res.ok) {
+        console.error("Error fetching logs:", result.error);
+        setEntries([]);
       } else {
-        setEntries(data || []);
+        const data = result.data || [];
+        setEntries(data);
+        
+        // Calculate stats
+        const totalMinutes = data.reduce((sum: number, e: LogEntry) => sum + (e.duration_minutes || 0), 0);
         setStats({
-          total_entries: data?.length || 0,
-          pending_uploads: 0, // Mock
-          hours_logged: 0 // Mock
+          total_entries: data.length,
+          pending_uploads: 0,
+          hours_logged: Math.round(totalMinutes / 60 * 10) / 10
         });
       }
-
     } catch (err) {
       console.error("Fetch error:", err);
+      setEntries([]);
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, []);
 
   useEffect(() => {
     fetchLogs(date);
@@ -97,28 +86,31 @@ export default function DailyLog() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.log_content.trim()) {
+      toast.error("Deskripsi tidak boleh kosong");
+      return;
+    }
+    
     setIsSubmitting(true);
     try {
-      // 1. Upload Photos (Mock for now or implement real upload)
-      // const photoUrls = await uploadPhotos(formData.photos);
-      const photoUrls: string[] = [];
-
-      // 2. Insert Log
-      const { error } = await api
-        .from('activity_logs')
-        .insert([{
-          date: date,
+      const res = await fetch('/api/daily-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          log_date: date,
+          log_content: formData.log_content,
           activity_type: formData.activity_type,
-          description: formData.description,
-          location: formData.location,
-          // photos: photoUrls, // If schema supports it
-          status: 'submitted'
-        }]);
+          duration_minutes: formData.duration_minutes || null,
+          photos: [] // TODO: implement photo upload
+        })
+      });
 
-      if (error) throw error;
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
 
       toast.success("Log berhasil disimpan!");
-      setFormData({ activity_type: "Patroli", description: "", location: "", photos: [] });
+      setFormData({ activity_type: "patrol", log_content: "", duration_minutes: 0, photos: [] });
       fetchLogs(date);
 
     } catch (err: any) {
@@ -182,22 +174,25 @@ export default function DailyLog() {
               onChange={handleInputChange}
               className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-zinc-100 focus:ring-blue-500"
             >
-              <option>Patroli</option>
-              <option>Evakuasi</option>
-              <option>Logistik</option>
-              <option>Koordinasi</option>
-              <option>Lainnya</option>
+              <option value="patrol">Patroli</option>
+              <option value="evacuation">Evakuasi</option>
+              <option value="logistics">Logistik</option>
+              <option value="coordination">Koordinasi</option>
+              <option value="rescue">Penyelamatan</option>
+              <option value="distribution">Distribusi Bantuan</option>
+              <option value="task_completion">Penyelesaian Tugas</option>
+              <option value="other">Lainnya</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">Lokasi</label>
+            <label className="block text-sm font-medium text-zinc-400 mb-1">Durasi (menit)</label>
             <input
-              type="text"
-              name="location"
-              value={formData.location}
+              type="number"
+              name="duration_minutes"
+              value={formData.duration_minutes || ''}
               onChange={handleInputChange}
-              placeholder="Contoh: Posko Utama, RT 05/02"
+              placeholder="Contoh: 60"
               className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-zinc-100 focus:ring-blue-500"
             />
           </div>
@@ -205,8 +200,8 @@ export default function DailyLog() {
           <div>
             <label className="block text-sm font-medium text-zinc-400 mb-1">Deskripsi / Catatan</label>
             <textarea
-              name="description"
-              value={formData.description}
+              name="log_content"
+              value={formData.log_content}
               onChange={handleInputChange}
               rows={3}
               placeholder="Jelaskan aktivitas atau situasi..."
@@ -272,17 +267,17 @@ export default function DailyLog() {
             entries.map((entry) => (
               <div key={entry.id} className="bg-zinc-800 p-4 rounded-xl border border-zinc-700 flex gap-4">
                 <div className="w-12 h-12 rounded-full bg-blue-900/30 text-blue-400 flex items-center justify-center font-bold text-lg flex-shrink-0">
-                  {entry.activity_type[0]}
+                  {entry.activity_type?.[0]?.toUpperCase() || '?'}
                 </div>
-                <div>
+                <div className="flex-1">
                   <div className="flex justify-between items-start w-full">
-                    <h4 className="font-bold text-zinc-200">{entry.activity_type}</h4>
+                    <h4 className="font-bold text-zinc-200">{entry.activity_type || 'Aktivitas'}</h4>
                     <span className="text-xs text-zinc-500">{new Date(entry.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                  <p className="text-sm text-zinc-400 mt-1">{entry.description}</p>
-                  {entry.location && (
+                  <p className="text-sm text-zinc-400 mt-1">{entry.log_content}</p>
+                  {entry.duration_minutes && (
                     <div className="flex items-center gap-1 text-xs text-zinc-500 mt-2">
-                      <span>📍 {entry.location}</span>
+                      <span>⏱️ {entry.duration_minutes} menit</span>
                     </div>
                   )}
                 </div>

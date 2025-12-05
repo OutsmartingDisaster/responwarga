@@ -10,7 +10,8 @@ import {
   Building2, FileText, UserCheck
 } from 'lucide-react';
 import { toast, Toaster } from 'react-hot-toast';
-import { OperationsTab, ReportsTab, TeamTab, SettingsTab } from './components';
+import { OperationsTab, ReportsTab, TeamTab, SettingsTab, IncidentsTab, ExportsTab, ApiKeysTab, OrgHealthSummary, ConfigTab } from './components';
+import { Download, Key } from 'lucide-react';
 
 interface Profile {
   id: string; name: string; role: string; status: string;
@@ -107,8 +108,14 @@ export default function OrgAdminDashboard({ orgSlug }: { orgSlug: string }) {
   };
 
   const handleLogout = async () => {
-    await logoutUser();
-    router.push('/masuk');
+    try {
+      await logoutUser();
+      // Force hard navigation to clear any cached state
+      window.location.href = '/masuk';
+    } catch (err) {
+      console.error('Logout error:', err);
+      window.location.href = '/masuk';
+    }
   };
 
   if (loading) {
@@ -144,9 +151,14 @@ export default function OrgAdminDashboard({ orgSlug }: { orgSlug: string }) {
 
         <nav className="flex-1 px-3 space-y-1">
           <SidebarItem icon={Activity} label="Overview" active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} collapsed={sidebarCollapsed} />
+          <SidebarItem icon={AlertTriangle} label="Incidents" active={activeTab === 'incidents'} onClick={() => setActiveTab('incidents')} collapsed={sidebarCollapsed} />
           <SidebarItem icon={Radio} label="Operasi Aktif" active={activeTab === 'operations'} onClick={() => setActiveTab('operations')} collapsed={sidebarCollapsed} badge={stats.operations || null} />
           <SidebarItem icon={Users} label="Tim Responder" active={activeTab === 'team'} onClick={() => setActiveTab('team')} collapsed={sidebarCollapsed} badge={stats.active || null} />
           <SidebarItem icon={FileText} label="Laporan" active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} collapsed={sidebarCollapsed} />
+          <SidebarItem icon={Download} label="Exports" active={activeTab === 'exports'} onClick={() => setActiveTab('exports')} collapsed={sidebarCollapsed} />
+          <SidebarItem icon={Key} label="API Keys" active={activeTab === 'api_keys'} onClick={() => setActiveTab('api_keys')} collapsed={sidebarCollapsed} />
+          <SidebarItem icon={Shield} label="Health" active={activeTab === 'health'} onClick={() => setActiveTab('health')} collapsed={sidebarCollapsed} />
+          <SidebarItem icon={Building2} label="Config" active={activeTab === 'config'} onClick={() => setActiveTab('config')} collapsed={sidebarCollapsed} />
           <SidebarItem icon={Settings} label="Pengaturan" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} collapsed={sidebarCollapsed} />
         </nav>
 
@@ -290,6 +302,26 @@ export default function OrgAdminDashboard({ orgSlug }: { orgSlug: string }) {
               onProfileUpdate={setProfile}
               onOrganizationUpdate={setOrganization}
             />
+          )}
+
+          {activeTab === 'incidents' && (
+            <IncidentsTab organizationId={organization?.id || ''} />
+          )}
+
+          {activeTab === 'exports' && (
+            <ExportsTab organizationId={organization?.id || ''} />
+          )}
+
+          {activeTab === 'api_keys' && (
+            <ApiKeysTab organizationId={organization?.id || ''} />
+          )}
+
+          {activeTab === 'health' && (
+            <OrgHealthSummary organizationId={organization?.id || ''} />
+          )}
+
+          {activeTab === 'config' && (
+            <ConfigTab organizationId={organization?.id || ''} />
           )}
         </div>
       </main>

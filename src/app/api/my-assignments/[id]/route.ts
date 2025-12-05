@@ -47,7 +47,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { status, response_notes } = await request.json();
+    const { status, response_notes, evidence_photos, completion_notes, log_entry } = await request.json();
 
     // Verify ownership
     const checkResult = await query(
@@ -83,6 +83,16 @@ export async function PATCH(
       values.push(response_notes);
     }
 
+    if (evidence_photos !== undefined) {
+      updates.push(`evidence_photos = $${paramIndex++}::jsonb`);
+      values.push(JSON.stringify(evidence_photos));
+    }
+
+    if (completion_notes !== undefined) {
+      updates.push(`completion_notes = $${paramIndex++}`);
+      values.push(completion_notes);
+    }
+
     if (updates.length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
@@ -93,9 +103,20 @@ export async function PATCH(
       values
     );
 
+    const assignment = result.rows[0];
+
+    // Auto-create daily log entry when completing task or if log_entry provided
+    if ((status === 'completed' || log_entry) && (completion_notes || log_entry)) {
+      const logContent = log_entry || completion_notes || 'Tugas selesai';
+      await query(
+        `INSERT INTO daily_logs (responder_id, log_date, log_content, activity_type, photos, sync_status, status)
+         VALUES ($1, CURRENT_DATE, $2, 'task_completion', $3::jsonb, 'synced', 'active')`,
+        [user.id, `[Tugas #${id.substring(0, 8)}] ${logContent}`, evidence_photos ? JSON.stringify(evidence_photos) : '[]']
+      );
+    }
+
     // Notify assigner about status change
     if (status) {
-      const assignment = result.rows[0];
       await query(
         `INSERT INTO notifications (user_id, type, title, message, reference_type, reference_id)
          VALUES ($1, 'assignment_update', $2, $3, 'report_assignment', $4)`,
